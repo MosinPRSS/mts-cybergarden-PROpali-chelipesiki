@@ -38,3 +38,12 @@ class UserOut(BaseModel):
     middlename: str = ""
 
     model_config = {"from_attributes": True}
+
+
+class GroupRequest(BaseModel):
+    group: str
+
+
+class UpdateGroupsRequest(BaseModel):
+    groups: list[str]
+
