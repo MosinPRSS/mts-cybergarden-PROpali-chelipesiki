@@ -1333,3 +1333,297 @@ main {
 .live-toast.ok i { color: #26b77d; }
 .live-toast.err i { color: #e30611; }
 @keyframes slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ─── Multi-group & custom group styles ───────────────────────────────────── */
+
+.board-column.custom .column-header i {
+  background: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+}
+.priority-badge.custom {
+  color: #60a5fa;
+  background: rgba(37, 99, 235, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.priority-badge.custom i {
+  background: #3b82f6;
+}
+
+/* Mode toggle in toolbar */
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: 3px 6px;
+  border-radius: 8px;
+}
+.mode-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.mode-buttons {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.mode-buttons button {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.mode-buttons button:hover {
+  color: var(--text);
+}
+.mode-buttons button.active {
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Card other groups chips */
+.card-other-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: -4px 0 9px;
+}
+.other-groups-label {
+  font-size: 8px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mini-group-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 8px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.mini-group-chip.critical {
+  color: #ff6f77;
+  background: rgba(227, 6, 17, 0.1);
+  border: 1px solid rgba(227, 6, 17, 0.2);
+}
+.mini-group-chip.assigned {
+  color: #8b86ed;
+  background: rgba(88, 80, 210, 0.1);
+  border: 1px solid rgba(100, 93, 229, 0.2);
+}
+.mini-group-chip.high {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+.mini-group-chip.resolved {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+.mini-group-chip.custom {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* Drawer group management */
+.group-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.group-chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.group-chip.critical {
+  color: #ff6f77;
+  background: rgba(227, 6, 17, 0.12);
+  border: 1px solid rgba(227, 6, 17, 0.25);
+}
+.group-chip.critical i { background: #e30611; }
+.group-chip.assigned {
+  color: #8b86ed;
+  background: rgba(88, 80, 210, 0.12);
+  border: 1px solid rgba(100, 93, 229, 0.25);
+}
+.group-chip.assigned i { background: #6d67e8; }
+.group-chip.high {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+.group-chip.high i { background: #e89232; }
+.group-chip.resolved {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.group-chip.resolved i { background: #2caa78; }
+.group-chip.custom {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.group-chip.custom i { background: #3b82f6; }
+
+.chip-remove {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: color 0.15s ease;
+}
+.chip-remove:hover {
+  color: #ff4d4f;
+}
+
+.add-group-widget {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 8px;
+}
+.preset-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.preset-label {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-right: 2px;
+}
+.preset-btn {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  border: 1px dashed var(--line);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.preset-btn:hover {
+  border-style: solid;
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.custom-group-form {
+  display: flex;
+  gap: 6px;
+}
+.custom-group-form input {
+  flex: 1;
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.custom-group-form input:focus {
+  border-color: #e30611;
+}
+.custom-group-form button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #e30611;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+}
+.custom-group-form button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Critical & assigned event alert banner */
+.alert-banner {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  font-weight: 600;
+  animation: slide-down 0.25s ease-out;
+}
+.alert-banner.critical {
+  background: #200406;
+  border: 1px solid #e30611;
+  color: #ffadb2;
+}
+.alert-banner.assigned {
+  background: #0d0c24;
+  border: 1px solid #6d67e8;
+  color: #b8b4ff;
+}
+.alert-banner.resolved {
+  background: #051a11;
+  border: 1px solid #10b981;
+  color: #a7f3d0;
+}
+.alert-banner button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+@keyframes slide-down { from { opacity: 0; transform: translate(-50%, -16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+

@@ -1,0 +1,494 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Incident,
+  Column,
+  DistributionMode,
+  AlertBannerState,
+  LiveStatusState,
+} from "./types";
+import { DEFAULT_INCIDENTS, SIGNIFICANCE_ORDER } from "./data";
+import {
+  formatSla,
+  getIncidentGroups,
+  getPrimaryGroup,
+  playChime,
+  fetchIncidents,
+  addIncidentGroup,
+  removeIncidentGroup,
+} from "./lib";
+import { Icon, AlertBanner, LiveToast } from "./components/common";
+import { Sidebar, Header } from "./components/layout";
+import {
+  OverviewStats,
+  Toolbar,
+  BoardColumn,
+  Drawer,
+} from "./components/dashboard";
+
+export function App() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [selected, setSelected] = useState<Incident | null>(null);
+  const [query, setQuery] = useState("");
+  const [secondsPassed, setSecondsPassed] = useState(0);
+  const [activeNav, setActiveNav] = useState("board");
+  const [teamOnly, setTeamOnly] = useState(false);
+  const [incidents, setIncidents] = useState<Incident[]>(DEFAULT_INCIDENTS);
+  const [liveStatus, setLiveStatus] = useState<LiveStatusState | null>(null);
+  const [alertBanner, setAlertBanner] = useState<AlertBannerState | null>(null);
+
+  // 'significant': раскидывать строго по самой значимой группе
+  // 'multi': отображать карточку во всех группах одновременно
+  const [distributionMode, setDistributionMode] = useState<DistributionMode>("significant");
+
+  const prevIncidentsRef = useRef<Map<string, Incident>>(new Map());
+
+  // SLA countdown timer
+  useEffect(() => {
+    const timer = window.setInterval(() => setSecondsPassed((val) => val + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Keyboard shortcut to close drawer or focus search
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelected(null);
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        document.getElementById("search-box")?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
+
+  // ─── Real-Time Sync with Backend incidents.json ─────────────────────────
+  useEffect(() => {
+    // 1. Initial snapshot fetch
+    fetchIncidents()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setIncidents(data);
+          setSecondsPassed(0);
+          const map = new Map<string, Incident>();
+          data.forEach((item) => map.set(item.id, item));
+          prevIncidentsRef.current = map;
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not load /api/incidents initially:", err);
+      });
+
+    // 2. SSE live stream connection
+    let eventSource: EventSource | null = null;
+    let reconnectTimer: NodeJS.Timeout | null = null;
+
+    function initSSE() {
+      eventSource = new EventSource("/api/incidents/stream");
+
+      eventSource.onopen = () => {
+        setLiveStatus({ text: "Live-поток активен", ok: true });
+        setTimeout(() => setLiveStatus(null), 3500);
+      };
+
+      eventSource.onmessage = (e) => {
+        try {
+          const freshData = JSON.parse(e.data);
+          if (Array.isArray(freshData)) {
+            const prevMap = prevIncidentsRef.current;
+            if (prevMap.size > 0) {
+              const newCritical = freshData.find(
+                (item: Incident) =>
+                  !prevMap.has(item.id) &&
+                  getIncidentGroups(item).includes("Критические")
+              );
+              const newlyAssigned = freshData.find((item: Incident) => {
+                const prev = prevMap.get(item.id);
+                const nowCoord = getIncidentGroups(item).includes("На координаторах");
+                const wasCoord = prev ? getIncidentGroups(prev).includes("На координаторах") : false;
+                return nowCoord && !wasCoord;
+              });
+              const newlyResolved = freshData.find((item: Incident) => {
+                const prev = prevMap.get(item.id);
+                const nowRes = getIncidentGroups(item).includes("Исследование ситуации");
+                const wasRes = prev ? getIncidentGroups(prev).includes("Исследование ситуации") : false;
+                return nowRes && !wasRes;
+              });
+
+              if (newCritical) {
+                playChime("critical");
+                setAlertBanner({
+                  type: "critical",
+                  text: `🚨 Новый критический инцидент ${newCritical.id} (${newCritical.service})! Требует немедленной реакции.`,
+                });
+                setTimeout(() => setAlertBanner(null), 8000);
+              } else if (newlyAssigned) {
+                playChime("assigned");
+                setAlertBanner({
+                  type: "assigned",
+                  text: `👤 Инцидент ${newlyAssigned.id} (${newlyAssigned.service}) передан в группу координаторов!`,
+                });
+                setTimeout(() => setAlertBanner(null), 7000);
+              } else if (newlyResolved) {
+                playChime("assigned");
+                setAlertBanner({
+                  type: "resolved",
+                  text: `✅ Инцидент ${newlyResolved.id} решён и переведён в статус исследования причин.`,
+                });
+                setTimeout(() => setAlertBanner(null), 6000);
+              }
+            }
+
+            const newMap = new Map<string, Incident>();
+            freshData.forEach((item: Incident) => newMap.set(item.id, item));
+            prevIncidentsRef.current = newMap;
+
+            setIncidents(freshData);
+            setSecondsPassed(0);
+            setLiveStatus({ text: "Данные инцидентов обновлены", ok: true });
+            setTimeout(() => setLiveStatus(null), 3000);
+
+            // Keep selected item up to date
+            setSelected((prev) => {
+              if (!prev) return null;
+              const found = freshData.find((item: Incident) => item.id === prev.id);
+              return found || prev;
+            });
+          }
+        } catch (err) {
+          console.error("Error parsing SSE incident message:", err);
+        }
+      };
+
+      eventSource.onerror = () => {
+        setLiveStatus({ text: "Переподключение к серверу...", ok: false });
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        reconnectTimer = setTimeout(initSSE, 4000);
+      };
+    }
+
+    initSSE();
+
+    return () => {
+      if (eventSource) eventSource.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, []);
+
+  const slaFor = useCallback(
+    (incident: Incident) => Math.max(0, incident.sla - secondsPassed),
+    [secondsPassed]
+  );
+
+  // Group addition via API with optimistic update
+  const handleAddGroup = async (incidentId: string, groupName: string) => {
+    const clean = groupName.trim();
+    if (!clean) return;
+
+    setIncidents((prev) =>
+      prev.map((inc) => {
+        if (inc.id === incidentId) {
+          const current = getIncidentGroups(inc);
+          const nextGroups = current.includes(clean) ? current : [...current, clean];
+          const tags = Array.isArray(inc.tags) ? [...inc.tags] : [];
+          if (nextGroups.length > 1 && !tags.includes("Мульти-группа")) {
+            tags.push("Мульти-группа");
+          }
+          return { ...inc, groups: nextGroups, tags };
+        }
+        return inc;
+      })
+    );
+
+    setSelected((prev) => {
+      if (!prev || prev.id !== incidentId) return prev;
+      const current = getIncidentGroups(prev);
+      const nextGroups = current.includes(clean) ? current : [...current, clean];
+      return { ...prev, groups: nextGroups };
+    });
+
+    try {
+      await addIncidentGroup(incidentId, clean);
+    } catch (err) {
+      console.error("Error persisting group:", err);
+    }
+  };
+
+  // Group removal via API with optimistic update
+  const handleRemoveGroup = async (incidentId: string, groupName: string) => {
+    setIncidents((prev) =>
+      prev.map((inc) => {
+        if (inc.id === incidentId) {
+          const current = getIncidentGroups(inc);
+          const nextGroups = current.filter((g) => g !== groupName);
+          let tags = Array.isArray(inc.tags) ? [...inc.tags] : [];
+          if (nextGroups.length <= 1) {
+            tags = tags.filter((t) => t !== "Мульти-группа");
+          }
+          return { ...inc, groups: nextGroups, tags };
+        }
+        return inc;
+      })
+    );
+
+    setSelected((prev) => {
+      if (!prev || prev.id !== incidentId) return prev;
+      const current = getIncidentGroups(prev);
+      return { ...prev, groups: current.filter((g) => g !== groupName) };
+    });
+
+    try {
+      await removeIncidentGroup(incidentId, groupName);
+    } catch (err) {
+      console.error("Error removing group:", err);
+    }
+  };
+
+  const filtered = useMemo(
+    () =>
+      incidents.filter((incident) => {
+        const matches = `${incident.id} ${incident.service} ${incident.area} ${incident.summary} ${getIncidentGroups(incident).join(" ")}`
+          .toLowerCase()
+          .includes(query.toLowerCase());
+        const belongs = !teamOnly || incident.team?.includes("Координатор") || getIncidentGroups(incident).includes("На координаторах");
+        return matches && belongs;
+      }),
+    [incidents, query, teamOnly]
+  );
+
+  // Dynamic custom groups
+  const customGroups = useMemo(() => {
+    const custom = new Set<string>();
+    incidents.forEach((inc) => {
+      getIncidentGroups(inc).forEach((g) => {
+        if (!SIGNIFICANCE_ORDER.includes(g)) {
+          custom.add(g);
+        }
+      });
+    });
+    return Array.from(custom);
+  }, [incidents]);
+
+  // All columns: 4 main columns in order of significance + dynamic custom groups
+  const allColumns: Column[] = useMemo(() => {
+    const base: Column[] = [
+      {
+        key: "Критические",
+        id: "critical",
+        title: "Критические",
+        hint: "1-й приоритет · Реакция < 15 мин",
+        badgeClass: "critical",
+        priorityRank: 1,
+      },
+      {
+        key: "На координаторах",
+        id: "coordinators",
+        title: "На координаторах",
+        hint: "2-й приоритет · Маршрутизация в команды",
+        badgeClass: "assigned",
+        priorityRank: 2,
+      },
+      {
+        key: "Высокий риск",
+        id: "high",
+        title: "Высокий риск",
+        hint: "3-й приоритет · Под наблюдением",
+        badgeClass: "high",
+        priorityRank: 3,
+      },
+      {
+        key: "Исследование ситуации",
+        id: "resolved",
+        title: "Исследование ситуации",
+        hint: "4-й приоритет · Разбор причин",
+        badgeClass: "resolved",
+        priorityRank: 4,
+      },
+    ];
+
+    const custom: Column[] = customGroups.map((groupName, idx) => ({
+      key: groupName,
+      id: `custom-${idx}`,
+      title: groupName,
+      hint: "Дополнительная группа инцидентов",
+      badgeClass: "custom",
+      priorityRank: 5 + idx,
+      isCustom: true,
+    }));
+
+    return [...base, ...custom];
+  }, [customGroups]);
+
+  // KPI Overview metrics
+  const criticalCount = useMemo(
+    () => incidents.filter((i) => getIncidentGroups(i).includes("Критические")).length,
+    [incidents]
+  );
+
+  const riskCount = useMemo(
+    () =>
+      incidents.filter(
+        (i) =>
+          !getIncidentGroups(i).includes("Исследование ситуации") &&
+          i.sla > 0 &&
+          slaFor(i) < 15 * 60
+      ).length,
+    [incidents, slaFor]
+  );
+
+  const nearestRiskSla = useMemo(() => {
+    const activeWithSla = incidents
+      .filter((i) => !getIncidentGroups(i).includes("Исследование ситуации") && i.sla > 0)
+      .map((i) => slaFor(i))
+      .sort((a, b) => a - b);
+    return activeWithSla.length > 0 ? formatSla(activeWithSla[0]) : "—";
+  }, [incidents, slaFor]);
+
+  const workloadCount = useMemo(
+    () => incidents.filter((i) => !getIncidentGroups(i).includes("Исследование ситуации")).length,
+    [incidents]
+  );
+
+  const myTeamCount = useMemo(
+    () =>
+      incidents.filter(
+        (i) =>
+          i.team?.includes("Координатор") ||
+          getIncidentGroups(i).includes("На координаторах")
+      ).length,
+    [incidents]
+  );
+
+  return (
+    <div className={`app ${theme}`}>
+      {/* SIDEBAR */}
+      <Sidebar
+        activeNav={activeNav}
+        onSelectNav={setActiveNav}
+        criticalCount={criticalCount}
+      />
+
+      {/* MAIN */}
+      <main>
+        <Header
+          query={query}
+          onQueryChange={setQuery}
+          theme={theme}
+          onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
+        />
+
+        <div className="content">
+          <div className="page-heading">
+            <div>
+              <p>
+                Оперативный центр <span>/</span> Россия
+              </p>
+              <h1>Активные инциденты</h1>
+            </div>
+            <div className="shift">
+              <span>Текущая смена</span>
+              <div className="shift-avatars">
+                <i>ЕК</i>
+                <i>АР</i>
+                <i>МВ</i>
+                <i>+3</i>
+              </div>
+              <b>6 координаторов</b>
+            </div>
+          </div>
+
+          {/* OVERVIEW STATS CARDS */}
+          <OverviewStats
+            criticalCount={criticalCount}
+            riskCount={riskCount}
+            nearestRiskSla={nearestRiskSla}
+            workloadCount={workloadCount}
+          />
+
+          {/* TOOLBAR & MULTI-GROUP TOGGLE */}
+          <Toolbar
+            totalCount={incidents.length}
+            myTeamCount={myTeamCount}
+            teamOnly={teamOnly}
+            onToggleTeamOnly={setTeamOnly}
+            distributionMode={distributionMode}
+            onSetDistributionMode={setDistributionMode}
+            columnsCount={allColumns.length}
+          />
+
+          {/* OTHER NAV MODULES */}
+          {activeNav !== "board" && (
+            <div className="module-message">
+              <Icon
+                name={
+                  activeNav === "analytics" ? "chart" : activeNav === "teams" ? "users" : "history"
+                }
+                size={30}
+              />
+              <h2>
+                {activeNav === "analytics"
+                  ? "Аналитика"
+                  : activeNav === "teams"
+                    ? "Команды"
+                    : "История инцидентов"}
+              </h2>
+              <p>Раздел доступен из рабочего контура. Вернитесь к активным инцидентам.</p>
+              <button onClick={() => setActiveNav("board")}>К доске инцидентов</button>
+            </div>
+          )}
+
+          {/* BOARD COLUMNS */}
+          {activeNav === "board" && (
+            <div
+              className="board"
+              style={{
+                gridTemplateColumns: `repeat(${allColumns.length}, minmax(260px, 1fr))`,
+              }}
+            >
+              {allColumns.map((column) => {
+                const items = filtered.filter((incident) => {
+                  if (distributionMode === "significant") {
+                    return getPrimaryGroup(incident) === column.key;
+                  } else {
+                    return getIncidentGroups(incident).includes(column.key);
+                  }
+                });
+
+                return (
+                  <BoardColumn
+                    key={column.key}
+                    column={column}
+                    items={items}
+                    slaFor={slaFor}
+                    onSelectIncident={setSelected}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* DRAWER */}
+      {selected && (
+        <Drawer
+          incident={selected}
+          seconds={slaFor(selected)}
+          onClose={() => setSelected(null)}
+          onAddGroup={handleAddGroup}
+          onRemoveGroup={handleRemoveGroup}
+        />
+      )}
+
+      {/* CRITICAL / ASSIGNED EVENT ALERT BANNER */}
+      <AlertBanner banner={alertBanner} onClose={() => setAlertBanner(null)} />
+
+      {/* LIVE TOAST NOTIFICATION */}
+      <LiveToast status={liveStatus} />
+    </div>
+  );
+}
+
+export default App;
