@@ -1,0 +1,125 @@
+.page {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: #040900;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Left: anatomy ──────────────────────────────────────── */
+.anatomySide {
+  width: 45%;
+  height: 100vh;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* ── Right: exercise list ───────────────────────────────── */
+.listSide {
+  flex: 1;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  padding: 60px 0 20px 0; /* Zero right padding so items are flush with edge */
+  position: relative;
+  overflow: hidden;
+}
+
+.listWrapper {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.topGradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 70px;
+  background: linear-gradient(180deg, #040900 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.bottomGradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 70px;
+  background: linear-gradient(0deg, #040900 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.itemsColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; /* All exercise boxes extend flush to the right window edge */
+  gap: 12px;
+  width: 100%;
+}
+
+/* ── Exercise item ──────────────────────────────────────── */
+.exerciseItem {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 16px 36px;
+  border: none;
+  border-radius: 4px 0 0 4px; /* Rounded on the left, completely flush on the right */
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  background: #485c3b;
+  width: 88%; /* Inactive items indented from left, stretching all the way to right edge */
+  margin-right: 0;
+}
+
+.exerciseItem:hover {
+  background: #587149;
+}
+
+.exerciseIcon {
+  flex-shrink: 0;
+  transition: transform 0.22s ease;
+}
+
+.exerciseName {
+  font-family: 'Arial Black', Arial, sans-serif;
+  font-size: 21px;
+  font-weight: 900;
+  color: #172412;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: all 0.22s ease;
+  white-space: nowrap;
+}
+
+/* Active / Selected item — stretches 100% across to the left, flush to right */
+.exerciseItemActive {
+  background: #dcebcc;
+  padding: 22px 48px;
+  width: 100%; /* Full length from anatomy boundary all the way to right screen edge */
+  margin-right: 0;
+  border-radius: 4px 0 0 4px;
+  box-shadow: -10px 4px 30px rgba(0, 0, 0, 0.75);
+  z-index: 5;
+}
+
+.exerciseItemActive .exerciseName {
+  font-size: 28px;
+  color: #040900;
+  letter-spacing: 0.06em;
+}
+
+.exerciseItemActive .exerciseIcon {
+  transform: scale(1.2);
+}
