@@ -4,7 +4,7 @@ import { IncidentCard } from "./IncidentCard";
 interface BoardColumnProps {
   column: Column;
   items: Incident[];
-  slaFor: (incident: Incident) => number;
+  slaFor: (incident: Incident) => number | null;
   onSelectIncident: (incident: Incident) => void;
 }
 

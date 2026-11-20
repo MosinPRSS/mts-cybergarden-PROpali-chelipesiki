@@ -1,9 +1,9 @@
-import { IconName } from "../types";
+import type { IconName } from "../types";
 
 export const SIGNIFICANCE_ORDER = [
   "Критические",
   "На координаторах",
-  "Высокий риск",
+  "Высокий приоритет",
   "Исследование ситуации",
 ];
 

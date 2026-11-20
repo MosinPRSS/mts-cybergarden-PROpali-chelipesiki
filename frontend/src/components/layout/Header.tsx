@@ -29,7 +29,7 @@ export function Header({ query, onQueryChange, theme, onThemeToggle }: HeaderPro
       <div className="top-actions">
         <div className="system-health">
           <i />
-          Все системы мониторинга активны
+          Дашборд координатора
         </div>
 
         <button

@@ -6,15 +6,17 @@ import {
   AlertBannerState,
   LiveStatusState,
 } from "./types";
-import { DEFAULT_INCIDENTS, SIGNIFICANCE_ORDER } from "./data";
+import { SIGNIFICANCE_ORDER } from "./data";
 import {
   formatSla,
   getIncidentGroups,
   getPrimaryGroup,
   playChime,
   fetchIncidents,
-  addIncidentGroup,
-  removeIncidentGroup,
+  normalizeIncident,
+  remainingSla,
+  isIncidentActive,
+  isIncidentResolved,
 } from "./lib";
 import { Icon, AlertBanner, LiveToast } from "./components/common";
 import { Sidebar, Header } from "./components/layout";
@@ -32,13 +34,13 @@ export function App() {
   const [secondsPassed, setSecondsPassed] = useState(0);
   const [activeNav, setActiveNav] = useState("board");
   const [teamOnly, setTeamOnly] = useState(false);
-  const [incidents, setIncidents] = useState<Incident[]>(DEFAULT_INCIDENTS);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [liveStatus, setLiveStatus] = useState<LiveStatusState | null>(null);
   const [alertBanner, setAlertBanner] = useState<AlertBannerState | null>(null);
 
   // 'significant': раскидывать строго по самой значимой группе
   // 'multi': отображать карточку во всех группах одновременно
-  const [distributionMode, setDistributionMode] = useState<DistributionMode>("significant");
+  const [distributionMode, setDistributionMode] = useState<DistributionMode>("multi");
 
   const prevIncidentsRef = useRef<Map<string, Incident>>(new Map());
 
@@ -66,7 +68,7 @@ export function App() {
     // 1. Initial snapshot fetch
     fetchIncidents()
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           setIncidents(data);
           setSecondsPassed(0);
           const map = new Map<string, Incident>();
@@ -80,7 +82,7 @@ export function App() {
 
     // 2. SSE live stream connection
     let eventSource: EventSource | null = null;
-    let reconnectTimer: NodeJS.Timeout | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     function initSSE() {
       eventSource = new EventSource("/api/incidents/stream");
@@ -92,14 +94,15 @@ export function App() {
 
       eventSource.onmessage = (e) => {
         try {
-          const freshData = JSON.parse(e.data);
+          const parsed = JSON.parse(e.data);
+          const freshData = Array.isArray(parsed) ? parsed.map(normalizeIncident) : parsed;
           if (Array.isArray(freshData)) {
             const prevMap = prevIncidentsRef.current;
             if (prevMap.size > 0) {
               const newCritical = freshData.find(
                 (item: Incident) =>
-                  !prevMap.has(item.id) &&
-                  getIncidentGroups(item).includes("Критические")
+                  getIncidentGroups(item).includes("Критические") &&
+                  !getIncidentGroups(prevMap.get(item.id) || { ...item, groups: [] }).includes("Критические")
               );
               const newlyAssigned = freshData.find((item: Incident) => {
                 const prev = prevMap.get(item.id);
@@ -109,9 +112,7 @@ export function App() {
               });
               const newlyResolved = freshData.find((item: Incident) => {
                 const prev = prevMap.get(item.id);
-                const nowRes = getIncidentGroups(item).includes("Исследование ситуации");
-                const wasRes = prev ? getIncidentGroups(prev).includes("Исследование ситуации") : false;
-                return nowRes && !wasRes;
+                return Boolean(prev) && isIncidentResolved(item) && !isIncidentResolved(prev!);
               });
 
               if (newCritical) {
@@ -132,7 +133,7 @@ export function App() {
                 playChime("assigned");
                 setAlertBanner({
                   type: "resolved",
-                  text: `✅ Инцидент ${newlyResolved.id} решён и переведён в статус исследования причин.`,
+                  text: `✅ Инцидент ${newlyResolved.id} решён. Статус: ${newlyResolved.state || newlyResolved.status}.`,
                 });
                 setTimeout(() => setAlertBanner(null), 6000);
               }
@@ -178,73 +179,9 @@ export function App() {
   }, []);
 
   const slaFor = useCallback(
-    (incident: Incident) => Math.max(0, incident.sla - secondsPassed),
+    (incident: Incident) => remainingSla(incident, secondsPassed),
     [secondsPassed]
   );
-
-  // Group addition via API with optimistic update
-  const handleAddGroup = async (incidentId: string, groupName: string) => {
-    const clean = groupName.trim();
-    if (!clean) return;
-
-    setIncidents((prev) =>
-      prev.map((inc) => {
-        if (inc.id === incidentId) {
-          const current = getIncidentGroups(inc);
-          const nextGroups = current.includes(clean) ? current : [...current, clean];
-          const tags = Array.isArray(inc.tags) ? [...inc.tags] : [];
-          if (nextGroups.length > 1 && !tags.includes("Мульти-группа")) {
-            tags.push("Мульти-группа");
-          }
-          return { ...inc, groups: nextGroups, tags };
-        }
-        return inc;
-      })
-    );
-
-    setSelected((prev) => {
-      if (!prev || prev.id !== incidentId) return prev;
-      const current = getIncidentGroups(prev);
-      const nextGroups = current.includes(clean) ? current : [...current, clean];
-      return { ...prev, groups: nextGroups };
-    });
-
-    try {
-      await addIncidentGroup(incidentId, clean);
-    } catch (err) {
-      console.error("Error persisting group:", err);
-    }
-  };
-
-  // Group removal via API with optimistic update
-  const handleRemoveGroup = async (incidentId: string, groupName: string) => {
-    setIncidents((prev) =>
-      prev.map((inc) => {
-        if (inc.id === incidentId) {
-          const current = getIncidentGroups(inc);
-          const nextGroups = current.filter((g) => g !== groupName);
-          let tags = Array.isArray(inc.tags) ? [...inc.tags] : [];
-          if (nextGroups.length <= 1) {
-            tags = tags.filter((t) => t !== "Мульти-группа");
-          }
-          return { ...inc, groups: nextGroups, tags };
-        }
-        return inc;
-      })
-    );
-
-    setSelected((prev) => {
-      if (!prev || prev.id !== incidentId) return prev;
-      const current = getIncidentGroups(prev);
-      return { ...prev, groups: current.filter((g) => g !== groupName) };
-    });
-
-    try {
-      await removeIncidentGroup(incidentId, groupName);
-    } catch (err) {
-      console.error("Error removing group:", err);
-    }
-  };
 
   const filtered = useMemo(
     () =>
@@ -252,7 +189,7 @@ export function App() {
         const matches = `${incident.id} ${incident.service} ${incident.area} ${incident.summary} ${getIncidentGroups(incident).join(" ")}`
           .toLowerCase()
           .includes(query.toLowerCase());
-        const belongs = !teamOnly || incident.team?.includes("Координатор") || getIncidentGroups(incident).includes("На координаторах");
+        const belongs = !teamOnly || getIncidentGroups(incident).includes("На координаторах");
         return matches && belongs;
       }),
     [incidents, query, teamOnly]
@@ -291,9 +228,9 @@ export function App() {
         priorityRank: 2,
       },
       {
-        key: "Высокий риск",
+        key: "Высокий приоритет",
         id: "high",
-        title: "Высокий риск",
+        title: "Высокий приоритет",
         hint: "3-й приоритет · Под наблюдением",
         badgeClass: "high",
         priorityRank: 3,
@@ -331,23 +268,24 @@ export function App() {
     () =>
       incidents.filter(
         (i) =>
-          !getIncidentGroups(i).includes("Исследование ситуации") &&
-          i.sla > 0 &&
-          slaFor(i) < 15 * 60
+          isIncidentActive(i) &&
+          slaFor(i) !== null &&
+          slaFor(i)! < 15 * 60
       ).length,
     [incidents, slaFor]
   );
 
   const nearestRiskSla = useMemo(() => {
     const activeWithSla = incidents
-      .filter((i) => !getIncidentGroups(i).includes("Исследование ситуации") && i.sla > 0)
+      .filter((i) => isIncidentActive(i))
       .map((i) => slaFor(i))
+      .filter((value): value is number => value !== null)
       .sort((a, b) => a - b);
     return activeWithSla.length > 0 ? formatSla(activeWithSla[0]) : "—";
   }, [incidents, slaFor]);
 
   const workloadCount = useMemo(
-    () => incidents.filter((i) => !getIncidentGroups(i).includes("Исследование ситуации")).length,
+    () => incidents.filter(isIncidentActive).length,
     [incidents]
   );
 
@@ -355,7 +293,6 @@ export function App() {
     () =>
       incidents.filter(
         (i) =>
-          i.team?.includes("Координатор") ||
           getIncidentGroups(i).includes("На координаторах")
       ).length,
     [incidents]
@@ -385,17 +322,7 @@ export function App() {
               <p>
                 Оперативный центр <span>/</span> Россия
               </p>
-              <h1>Активные инциденты</h1>
-            </div>
-            <div className="shift">
-              <span>Текущая смена</span>
-              <div className="shift-avatars">
-                <i>ЕК</i>
-                <i>АР</i>
-                <i>МВ</i>
-                <i>+3</i>
-              </div>
-              <b>6 координаторов</b>
+              <h1>Инциденты в фокусе</h1>
             </div>
           </div>
 
@@ -405,6 +332,8 @@ export function App() {
             riskCount={riskCount}
             nearestRiskSla={nearestRiskSla}
             workloadCount={workloadCount}
+            resolvedMetCount={incidents.filter((item) => item.sla_state === "met").length}
+            resolvedWithDeadlineCount={incidents.filter((item) => item.sla_state === "met" || item.sla_state === "breached").length}
           />
 
           {/* TOOLBAR & MULTI-GROUP TOGGLE */}
@@ -477,8 +406,6 @@ export function App() {
           incident={selected}
           seconds={slaFor(selected)}
           onClose={() => setSelected(null)}
-          onAddGroup={handleAddGroup}
-          onRemoveGroup={handleRemoveGroup}
         />
       )}
 

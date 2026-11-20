@@ -1,0 +1,78 @@
+{
+  "users": [
+    {"login": "demo.admin", "name": "Администратор", "surname": "Демо", "role": "admin"},
+    {"login": "alexey.romanov", "name": "Алексей", "surname": "Романов", "role": "coordinator"},
+    {"login": "irina.vlasova", "name": "Ирина", "surname": "Власова", "role": "engineer"},
+    {"login": "dmitry.orlov", "name": "Дмитрий", "surname": "Орлов", "role": "coordinator"},
+    {"login": "sergey.volkov", "name": "Сергей", "surname": "Волков", "role": "engineer"},
+    {"login": "maria.kotova", "name": "Мария", "surname": "Котова", "role": "engineer"},
+    {"login": "demo.observer", "name": "Наблюдатель", "surname": "Демо", "role": "observer"}
+  ],
+  "incidents": [
+    {
+      "id": "INC-98241", "priority": "Critical", "status": "In Progress",
+      "service": "МТС Деньги", "area": "API Gateway",
+      "summary": "Резкий рост ошибок 5xx в платежном контуре",
+      "team": "КЦ ИТ Координаторы Массовых Инцидентов", "assignee_login": "alexey.romanov",
+      "sla": 522, "affected": "≈ 18 400 клиентов",
+      "ai_recommendation": "Передать в ИТ-Инфраструктуру",
+      "groups": ["Критические", "На координаторах"], "tags": ["Мульти-группа"],
+      "created_minutes_ago": 20, "updated_minutes_ago": 2
+    },
+    {
+      "id": "INC-98238", "priority": "Critical", "status": "Open",
+      "service": "МТС Банк", "area": "Авторизация",
+      "summary": "Недоступен вход в мобильное приложение", "team": "Банковские системы",
+      "assignee_login": null, "sla": 788, "affected": "≈ 6 200 клиентов",
+      "ai_recommendation": "Высокая вероятность срыва SLA",
+      "groups": ["Критические"], "tags": [],
+      "created_minutes_ago": 27, "updated_minutes_ago": 4
+    },
+    {
+      "id": "INC-98236", "priority": "High", "status": "In Progress",
+      "service": "МТС Live", "area": "Билетная платформа",
+      "summary": "Замедление подтверждения новых заказов", "team": "Digital Platform",
+      "assignee_login": null, "sla": 2305, "affected": "Часть пользователей",
+      "ai_recommendation": "Проверить очередь payment-events",
+      "groups": ["Высокий риск"], "tags": [],
+      "created_minutes_ago": 32, "updated_minutes_ago": 7
+    },
+    {
+      "id": "INC-98233", "priority": "High", "status": "In Progress",
+      "service": "МТС Линк", "area": "Видеоконференции",
+      "summary": "Деградация качества видео в ЦФО", "team": "UC Platform",
+      "assignee_login": "irina.vlasova", "sla": 3124, "affected": "3 региона",
+      "ai_recommendation": "Корреляция с изменением CDN",
+      "groups": ["Высокий риск"], "tags": [],
+      "created_minutes_ago": 39, "updated_minutes_ago": 11
+    },
+    {
+      "id": "INC-98229", "priority": "Medium", "status": "Open",
+      "service": "МТС Маркетолог", "area": "Кампании",
+      "summary": "Задержка запуска SMS-рассылок",
+      "team": "КЦ ИТ Координаторы Массовых Инцидентов", "assignee_login": "dmitry.orlov",
+      "sla": 4458, "affected": "12 кампаний",
+      "ai_recommendation": "Ожидается ответ от Messaging Core",
+      "groups": ["На координаторах"], "tags": [],
+      "created_minutes_ago": 52, "updated_minutes_ago": 14
+    },
+    {
+      "id": "INC-98221", "priority": "Medium", "status": "In Progress",
+      "service": "МТС ID", "area": "SSO",
+      "summary": "Повышенная латентность токенов",
+      "team": "КЦ ИТ Координаторы Массовых Инцидентов", "assignee_login": "sergey.volkov",
+      "sla": 6331, "affected": "p95: 1.8 сек", "ai_recommendation": "Риск срыва SLA низкий",
+      "groups": ["На координаторах"], "tags": [],
+      "created_minutes_ago": 67, "updated_minutes_ago": 19
+    },
+    {
+      "id": "INC-98198", "priority": "Medium", "status": "Resolved",
+      "service": "Мой МТС", "area": "Профиль",
+      "summary": "Ошибка загрузки истории списаний", "team": "B2C Digital",
+      "assignee_login": "maria.kotova", "sla": 0, "affected": "Устранено",
+      "ai_recommendation": "Причина: некорректный cache key",
+      "groups": ["Исследование ситуации"], "tags": [],
+      "created_minutes_ago": 97, "updated_minutes_ago": 12
+    }
+  ]
+}

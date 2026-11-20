@@ -1,99 +1,67 @@
-"""
-FastAPI entry point for the MTS Incident Command backend.
-
-Endpoints:
-  GET  /health                 → health check
-  POST /api/register           → user registration
-  POST /api/auth               → login → JWT token
-  GET  /api/incidents          → incidents JSON
-  GET  /api/incidents/stream   → SSE live stream
-"""
-
-import asyncio
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import uvicorn
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from fastapi.staticfiles import StaticFiles
 
-from core.config import settings
-from core.database import engine, Base
-from routers import auth, incidents as incidents_router
-from routers.incidents import _watch_incidents
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s: %(message)s")
-logger = logging.getLogger(__name__)
+from core.db import engine
+from core.sse_manager import sse_manager
+from routers.incidents import router as incidents_router
+from routers.sse import router as sse_router
+from schemas.incidents import HealthResponse
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create DB tables if they don't exist yet
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables ready")
-    except Exception as exc:
-        logger.warning("Database connection failed or tables skipped: %s", exc)
-
-    # Start background file watcher for incidents.json
-    watcher_task = asyncio.create_task(_watch_incidents())
-    logger.info("Incidents file watcher started")
-
-    yield
-
-    watcher_task.cancel()
-    try:
-        await watcher_task
-    except asyncio.CancelledError:
-        pass
-    try:
+        yield
+    finally:
+        sse_manager.close_all()
         await engine.dispose()
-    except Exception:
-        pass
-    logger.info("Shutdown complete")
 
 
 app = FastAPI(
-    title="Incident Command API",
-    version="2.0.0",
-    description="MTS Incident Command Dashboard Backend",
+    title="МТС — дашборд координатора инцидентов",
+    version="0.2.0",
+    description=(
+        "API дашборда координатора. PostgreSQL хранит пользователей и инциденты; "
+        "SSE передаёт обновления подключённым клиентам.\n\n"
+        "Начальный список: `GET /api/incidents`. Обновления: "
+        "`GET /api/incidents/stream` через EventSource. SSE — бесконечный ответ, "
+        "поэтому его удобнее проверять через EventSource или curl -N.\n\n"
+        "Формат исходной выгрузки сохранён; группы и SLA вычисляются по её атрибутам. "
+        "Группы внимания доступны только для чтения. Автоматическое слежение за JSON, "
+        "авторизация и Telegram-бот пока не реализованы."
+    ),
+    docs_url="/docs", redoc_url="/redoc", openapi_url="/openapi.json",
+    openapi_tags=[
+        {"name": "incidents", "description": "Чтение инцидентов из БД и подписка на обновления."},
+        {"name": "system", "description": "Проверка доступности процесса API."},
+    ],
+    swagger_ui_parameters={"displayRequestDuration": True, "filter": True, "docExpansion": "list"},
     lifespan=lifespan,
 )
-
-# ─── CORS ────────────────────────────────────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ─── Routers ─────────────────────────────────────────────────────────────────
-app.include_router(auth.router)
-app.include_router(incidents_router.router)
+# Register the static /stream route before /{incident_id}.
+app.include_router(sse_router)
+app.include_router(incidents_router)
 
 
-@app.get("/health", tags=["meta"])
+@app.get("/health", tags=["system"], response_model=HealthResponse, summary="Проверить процесс API")
 async def health():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok"}
 
 
-# ─── Static dashboard (serves index.html etc.) ───────────────────────────────
-_dashboard_dir = Path(__file__).parent / "dashboard"
-if _dashboard_dir.exists():
-    app.mount("/dashboard", StaticFiles(directory=str(_dashboard_dir), html=True), name="dashboard")
-
-
-@app.get("/", include_in_schema=False)
-async def root():
-    return RedirectResponse(url="/dashboard/")
+@app.get("/swagger", include_in_schema=False)
+async def swagger():
+    return RedirectResponse(url="/docs")
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, app_dir=str(Path(__file__).parent))
-
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        app_dir=str(Path(__file__).resolve().parent),
+    )

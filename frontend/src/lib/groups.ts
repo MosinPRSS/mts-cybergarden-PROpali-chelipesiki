@@ -1,20 +1,29 @@
-import { Incident } from "../types";
-import { SIGNIFICANCE_ORDER } from "../data/constants";
+import type { Incident } from "../types";
+import { SIGNIFICANCE_ORDER } from "../data/constants.ts";
 
 export function getIncidentGroups(incident: Incident): string[] {
-  if (Array.isArray(incident.groups) && incident.groups.length > 0) {
+  if (Array.isArray(incident.groups)) {
     return incident.groups;
   }
   const derived: string[] = [];
-  if (incident.priority === "Critical") derived.push("Критические");
-  if (incident.team?.includes("Координатор") || incident.priority === "Assigned") {
+  const active = isIncidentActive(incident);
+  if (active && (incident.priorityId === 4 || incident.priority === "Critical")) derived.push("Критические");
+  if ((active || incident.status === "Research") && incident.team === "КЦ ИТ Координаторы Массовых Инцидентов") {
     derived.push("На координаторах");
   }
-  if (incident.priority === "High") derived.push("Высокий риск");
-  if (incident.priority === "Resolved" || incident.priority === "Решено") {
+  if (active && (incident.priorityId === 3 || incident.priority === "High")) derived.push("Высокий приоритет");
+  if (incident.status === "Research") {
     derived.push("Исследование ситуации");
   }
-  return derived.length > 0 ? derived : ["Критические"];
+  return derived;
+}
+
+export function isIncidentResolved(incident: Incident): boolean {
+  return incident.is_resolved ?? ["Resolved", "Closed", "Research"].includes(incident.status || "");
+}
+
+export function isIncidentActive(incident: Incident): boolean {
+  return incident.is_active ?? !isIncidentResolved(incident);
 }
 
 export function getPrimaryGroup(incident: Incident): string {
@@ -22,7 +31,7 @@ export function getPrimaryGroup(incident: Incident): string {
   for (const sig of SIGNIFICANCE_ORDER) {
     if (groups.includes(sig)) return sig;
   }
-  return groups[0] || "Критические";
+  return groups[0] || "Прочие";
 }
 
 export function getGroupBadgeClass(groupName: string): string {
@@ -31,7 +40,7 @@ export function getGroupBadgeClass(groupName: string): string {
       return "critical";
     case "На координаторах":
       return "assigned";
-    case "Высокий риск":
+    case "Высокий приоритет":
       return "high";
     case "Исследование ситуации":
       return "resolved";

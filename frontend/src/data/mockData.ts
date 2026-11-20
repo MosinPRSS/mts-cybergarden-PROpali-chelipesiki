@@ -43,7 +43,7 @@ export const DEFAULT_INCIDENTS: Incident[] = [
     ai: "Проверить очередь payment-events",
     updated: "7 мин назад",
     created: "14:15",
-    groups: ["Высокий риск"],
+    groups: ["Высокий приоритет"],
   },
   {
     id: "INC-98233",
@@ -58,7 +58,7 @@ export const DEFAULT_INCIDENTS: Incident[] = [
     ai: "Корреляция с изменением CDN",
     updated: "11 мин назад",
     created: "14:08",
-    groups: ["Высокий риск"],
+    groups: ["Высокий приоритет"],
   },
   {
     id: "INC-98229",

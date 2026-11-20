@@ -1,0 +1,730 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "МТС — дашборд координатора инцидентов",
+    "description": "API дашборда координатора. PostgreSQL хранит пользователей и инциденты; SSE передаёт обновления подключённым клиентам.\n\nНачальный список: `GET /api/incidents`. Обновления: `GET /api/incidents/stream` через EventSource. SSE — бесконечный ответ, поэтому его удобнее проверять через EventSource или curl -N.\n\nФормат исходной выгрузки сохранён; группы и SLA вычисляются по её атрибутам. Группы внимания доступны только для чтения. Автоматическое слежение за JSON, авторизация и Telegram-бот пока не реализованы.",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/api/incidents/stream": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Subscribe to live incident updates",
+        "description": "Live-only, currently unauthenticated feed. The producer broadcasts JSON incident arrays without an event name for the existing frontend onmessage handler. No initial snapshot or Last-Event-ID replay is implemented yet.",
+        "operationId": "stream_incidents_api_incidents_stream_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "retry": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Получить список инцидентов",
+        "description": "Начальный снимок из PostgreSQL. Для последующих обновлений используется SSE-подписка.",
+        "operationId": "list_incidents_api_incidents_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IncidentResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Incidents Api Incidents Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{incident_id}": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Получить инцидент по ID",
+        "operationId": "get_incident_api_incidents__incident_id__get",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Инцидент не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{incident_id}/source": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Получить исходную запись ITSM без нормализации",
+        "description": "Все исходные поля, null, служебные значения и неизвестные дополнительные поля сохраняются без потерь.",
+        "operationId": "get_incident_source_api_incidents__incident_id__source_get",
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Incident Source Api Incidents  Incident Id  Source Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Инцидент не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Проверить процесс API",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Состояние процесса API",
+            "examples": [
+              "ok"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "HealthResponse"
+      },
+      "IncidentResponse": {
+        "properties": {
+          "sysId": {
+            "type": "string",
+            "title": "Sysid"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "stateEnum": {
+            "$ref": "#/components/schemas/IncidentState"
+          },
+          "stateId": {
+            "type": "integer",
+            "title": "Stateid",
+            "description": "Коды реальной выгрузки: 0 Assigned, 2 WorkInProgress, 7 Resolved, 10 Closed, 20 Research. В описательном справочнике 7/10 перепутаны, 20 пропущен."
+          },
+          "stateReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statereason"
+          },
+          "stateReasonId": {
+            "type": "string",
+            "title": "Statereasonid"
+          },
+          "submitDate": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitdate"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline",
+            "description": "Абсолютный срок решения с часовым поясом; null допустим"
+          },
+          "completionDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondate"
+          },
+          "lastAssignmentToTeamDateTime": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastassignmenttoteamdatetime"
+          },
+          "header": {
+            "type": "string",
+            "title": "Header"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "shortDescription": {
+            "type": "string",
+            "title": "Shortdescription"
+          },
+          "assignedGroupName": {
+            "type": "string",
+            "title": "Assignedgroupname"
+          },
+          "assignedEmployee": {
+            "type": "string",
+            "title": "Assignedemployee"
+          },
+          "assignedEmployeeLogin": {
+            "type": "string",
+            "title": "Assignedemployeelogin"
+          },
+          "initiatorName": {
+            "type": "string",
+            "title": "Initiatorname"
+          },
+          "initiatorLogin": {
+            "type": "string",
+            "title": "Initiatorlogin"
+          },
+          "isEffect": {
+            "type": "boolean",
+            "title": "Iseffect"
+          },
+          "isReason": {
+            "type": "boolean",
+            "title": "Isreason"
+          },
+          "isDouble": {
+            "type": "boolean",
+            "title": "Isdouble"
+          },
+          "isMaster": {
+            "type": "boolean",
+            "title": "Ismaster"
+          },
+          "incType": {
+            "type": "string",
+            "title": "Inctype"
+          },
+          "serviceTypeId": {
+            "type": "integer",
+            "title": "Servicetypeid"
+          },
+          "serviceType": {
+            "type": "string",
+            "title": "Servicetype"
+          },
+          "priorityId": {
+            "type": "integer",
+            "title": "Priorityid",
+            "description": "1 Низкий, 2 Средний, 3 Высокий, 4 Наивысший; для группы критических принят код 4"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority"
+          },
+          "urgencyId": {
+            "type": "integer",
+            "title": "Urgencyid"
+          },
+          "urgency": {
+            "type": "string",
+            "title": "Urgency"
+          },
+          "impactId": {
+            "type": "integer",
+            "title": "Impactid"
+          },
+          "impact": {
+            "type": "string",
+            "title": "Impact"
+          },
+          "waitingExitDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waitingexitdate"
+          },
+          "isRootIncident": {
+            "type": "boolean",
+            "title": "Isrootincident"
+          },
+          "productName": {
+            "type": "string",
+            "title": "Productname"
+          },
+          "productId": {
+            "type": "string",
+            "title": "Productid"
+          },
+          "productMasterId": {
+            "type": "string",
+            "title": "Productmasterid"
+          },
+          "productUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Producturl"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "serviceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serviceid"
+          },
+          "scenarioName": {
+            "type": "string",
+            "title": "Scenarioname"
+          },
+          "isNeedUp": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isneedup"
+          },
+          "eliminationType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eliminationtype"
+          },
+          "eliminationTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eliminationtypeid"
+          },
+          "receivingChannel": {
+            "type": "string",
+            "title": "Receivingchannel"
+          },
+          "solution": {
+            "type": "string",
+            "title": "Solution"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IncidentState",
+            "description": "Тот же статус, что stateEnum; никогда не приоритет"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "is_resolved": {
+            "type": "boolean",
+            "title": "Is Resolved"
+          },
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Groups",
+            "description": "Вычисляются по статусу, priorityId и точному assignedGroupName",
+            "readOnly": true
+          },
+          "sla": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla",
+            "description": "Секунды до deadline; отрицательное число — просрочка. Для решённых фиксируется на completionDate, null — срок неизвестен"
+          },
+          "sla_state": {
+            "type": "string",
+            "enum": [
+              "remaining",
+              "overdue",
+              "met",
+              "breached",
+              "no_deadline",
+              "unknown"
+            ],
+            "title": "Sla State"
+          },
+          "area": {
+            "type": "string",
+            "title": "Area"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "team": {
+            "type": "string",
+            "title": "Team"
+          },
+          "assignee": {
+            "type": "string",
+            "title": "Assignee"
+          },
+          "affected": {
+            "type": "string",
+            "title": "Affected",
+            "description": "Исходная оценка impact, не выдуманное число клиентов"
+          },
+          "ai": {
+            "type": "string",
+            "title": "Ai",
+            "description": "Пустая строка, пока реальный ИИ-анализ отсутствует"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "created": {
+            "type": "string",
+            "title": "Created"
+          },
+          "updated": {
+            "type": "string",
+            "title": "Updated"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Время регистрации submitDate"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Время последнего изменения импортированной записи в БД"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "sysId",
+          "id",
+          "state",
+          "stateEnum",
+          "stateId",
+          "stateReasonId",
+          "submitDate",
+          "header",
+          "description",
+          "shortDescription",
+          "assignedGroupName",
+          "assignedEmployee",
+          "assignedEmployeeLogin",
+          "initiatorName",
+          "initiatorLogin",
+          "isEffect",
+          "isReason",
+          "isDouble",
+          "isMaster",
+          "incType",
+          "serviceTypeId",
+          "serviceType",
+          "priorityId",
+          "priority",
+          "urgencyId",
+          "urgency",
+          "impactId",
+          "impact",
+          "isRootIncident",
+          "productName",
+          "productId",
+          "productMasterId",
+          "service",
+          "scenarioName",
+          "receivingChannel",
+          "solution",
+          "status",
+          "is_active",
+          "is_resolved",
+          "groups",
+          "sla",
+          "sla_state",
+          "area",
+          "summary",
+          "team",
+          "assignee",
+          "affected",
+          "ai",
+          "tags",
+          "created",
+          "updated",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "IncidentResponse"
+      },
+      "IncidentState": {
+        "type": "string",
+        "enum": [
+          "Assigned",
+          "WorkInProgress",
+          "Resolved",
+          "Closed",
+          "Research"
+        ],
+        "title": "IncidentState"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "incidents",
+      "description": "Чтение инцидентов из БД и подписка на обновления."
+    },
+    {
+      "name": "system",
+      "description": "Проверка доступности процесса API."
+    }
+  ]
+}

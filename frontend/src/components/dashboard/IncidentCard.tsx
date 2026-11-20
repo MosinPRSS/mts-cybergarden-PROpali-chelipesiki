@@ -4,12 +4,12 @@ import { Icon } from "../common/Icon";
 
 interface IncidentCardProps {
   incident: Incident;
-  seconds: number;
+  seconds: number | null;
   onClick: () => void;
 }
 
 export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) {
-  const dangerSla = seconds > 0 && seconds < 15 * 60;
+  const dangerSla = seconds !== null && seconds < 15 * 60 && !incident.is_resolved;
   const groups = getIncidentGroups(incident);
   const primary = getPrimaryGroup(incident);
   const otherGroups = groups.filter((g) => g !== primary);
@@ -69,7 +69,7 @@ export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) 
                   : ""
             }
           >
-            {formatSla(seconds)}
+            {formatSla(seconds, incident.sla_state)}
           </strong>
         </div>
         <div className="metric-right">
@@ -88,13 +88,13 @@ export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) 
         </div>
       </div>
 
-      <div className="ai-pill">
+      {incident.ai && <div className="ai-pill">
         <Icon name="spark" size={15} />
         <span>
           <b>AI</b> {incident.ai}
         </span>
         <Icon name="chevron" size={14} />
-      </div>
+      </div>}
 
       <div className="card-footer">
         <span>

@@ -5,6 +5,8 @@ interface OverviewStatsProps {
   riskCount: number;
   nearestRiskSla: string;
   workloadCount: number;
+  resolvedMetCount: number;
+  resolvedWithDeadlineCount: number;
 }
 
 export function OverviewStats({
@@ -12,6 +14,8 @@ export function OverviewStats({
   riskCount,
   nearestRiskSla,
   workloadCount,
+  resolvedMetCount,
+  resolvedWithDeadlineCount,
 }: OverviewStatsProps) {
   return (
     <div className="overview">
@@ -23,7 +27,7 @@ export function OverviewStats({
           <small>Критические</small>
           <strong>{criticalCount}</strong>
         </div>
-        <em>+{criticalCount > 0 ? "1" : "0"} за час</em>
+        <em>Активные инциденты</em>
       </div>
 
       <div className="overview-item risk">
@@ -45,18 +49,18 @@ export function OverviewStats({
           <small>В работе</small>
           <strong>{workloadCount}</strong>
         </div>
-        <em>{Math.min(100, Math.round((workloadCount / 6) * 100))}% загрузки</em>
+        <em>Требуют решения</em>
       </div>
 
       <div className="overview-item quality">
         <div className="sla-ring">
-          94<small>%</small>
+          {resolvedWithDeadlineCount ? Math.round(resolvedMetCount / resolvedWithDeadlineCount * 100) : "—"}<small>%</small>
         </div>
         <div>
-          <small>SLA сегодня</small>
-          <strong>47 / 50</strong>
+          <small>Решено в срок</small>
+          <strong>{resolvedMetCount} / {resolvedWithDeadlineCount}</strong>
         </div>
-        <em>+2.4% к вчера</em>
+        <em>Среди инцидентов с известным сроком</em>
       </div>
     </div>
   );
