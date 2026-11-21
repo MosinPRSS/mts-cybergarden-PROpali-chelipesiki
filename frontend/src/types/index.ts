@@ -20,7 +20,9 @@ export type IconName =
   | "more"
   | "refresh"
   | "tag"
-  | "trash";
+  | "trash"
+  | "smart_toy"
+  | "toy_robot";
 
 export type NotificationType = "critical" | "assigned" | "resolved" | "info";
 

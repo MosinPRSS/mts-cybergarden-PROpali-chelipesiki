@@ -107,6 +107,28 @@ export function Icon({ name, size = 18, className = "" }: IconProps) {
         <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
       </>
     ),
+    smart_toy: (
+      <>
+        <rect x="4" y="6" width="16" height="13" rx="2" />
+        <path d="M12 6V2.5" />
+        <circle cx="12" cy="2.5" r="1" fill="currentColor" stroke="none" />
+        <path d="M1.5 12.5h2.5M20 12.5h2.5" />
+        <circle cx="8.5" cy="11" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="15.5" cy="11" r="1.1" fill="currentColor" stroke="none" />
+        <path d="M8.5 15h7" />
+      </>
+    ),
+    toy_robot: (
+      <>
+        <rect x="4" y="6" width="16" height="13" rx="2" />
+        <path d="M12 6V2.5" />
+        <circle cx="12" cy="2.5" r="1" fill="currentColor" stroke="none" />
+        <path d="M1.5 12.5h2.5M20 12.5h2.5" />
+        <circle cx="8.5" cy="11" r="1.1" fill="currentColor" stroke="none" />
+        <circle cx="15.5" cy="11" r="1.1" fill="currentColor" stroke="none" />
+        <path d="M8.5 15h7" />
+      </>
+    ),
   };
 
   return (

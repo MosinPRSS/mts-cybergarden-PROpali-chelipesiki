@@ -501,13 +501,13 @@ export function App() {
             <div className="module-message">
               <Icon
                 name={
-                  activeNav === "analytics" ? "chart" : activeNav === "teams" ? "users" : "history"
+                  activeNav === "analytics" ? "smart_toy" : activeNav === "teams" ? "users" : "history"
                 }
                 size={30}
               />
               <h2>
                 {activeNav === "analytics"
-                  ? "Аналитика"
+                  ? "Ассистент"
                   : activeNav === "teams"
                     ? "Команды"
                     : "История инцидентов"}
