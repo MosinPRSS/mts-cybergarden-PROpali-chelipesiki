@@ -47,6 +47,32 @@
         ]
       }
     },
+    "/api/incidents/summary": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "ИИ-обзор приоритетных инцидентов",
+        "operationId": "dashboard_summary_api_incidents_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
     "/api/incidents": {
       "get": {
         "tags": [
@@ -464,6 +490,73 @@
   },
   "components": {
     "schemas": {
+      "DashboardSummary": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "fallback",
+              "empty"
+            ],
+            "title": "Status"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/FocusIncident"
+            },
+            "type": "array",
+            "title": "Highlights"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "total_candidates": {
+            "type": "integer",
+            "title": "Total Candidates"
+          },
+          "analyzed_count": {
+            "type": "integer",
+            "title": "Analyzed Count"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "title": "As Of"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "summary",
+          "highlights",
+          "limitations",
+          "total_candidates",
+          "analyzed_count",
+          "as_of"
+        ],
+        "title": "DashboardSummary"
+      },
       "ErrorResponse": {
         "properties": {
           "detail": {
@@ -476,6 +569,33 @@
           "detail"
         ],
         "title": "ErrorResponse"
+      },
+      "FocusIncident": {
+        "properties": {
+          "incident": {
+            "$ref": "#/components/schemas/IncidentResponse"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "critical_urgent",
+              "critical",
+              "coordinator"
+            ],
+            "title": "Reason"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident",
+          "reason",
+          "summary"
+        ],
+        "title": "FocusIncident"
       },
       "HTTPValidationError": {
         "properties": {

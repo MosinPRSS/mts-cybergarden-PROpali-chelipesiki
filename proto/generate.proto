@@ -9,6 +9,29 @@ service IncidentSummaryService {
   // Сводка одного инцидента.
   rpc GenerateIncidentSummary(GenerateIncidentSummaryRequest)
       returns (GenerateIncidentSummaryResponse);
+  // Обзор наиболее важных инцидентов для главной страницы.
+  rpc GenerateDashboardSummary(GenerateDashboardSummaryRequest)
+      returns (GenerateDashboardSummaryResponse);
+}
+
+message GenerateDashboardSummaryRequest {
+  // SQL-порядок: срочные критические, остальные критические, координаторы.
+  repeated IncidentSnapshot incidents = 1;
+  google.protobuf.Timestamp as_of = 2;
+  int32 total_candidates = 3;
+}
+
+message DashboardHighlight {
+  string incident_id = 1;
+  string summary = 2;
+}
+
+message GenerateDashboardSummaryResponse {
+  string summary = 1;
+  // Первые три инцидента в порядке запроса, без пропусков и перестановок.
+  repeated DashboardHighlight highlights = 2;
+  repeated string limitations = 3;
+  google.protobuf.Timestamp generated_at = 4;
 }
 
 message GenerateIncidentSummaryRequest {

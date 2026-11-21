@@ -59,7 +59,7 @@ export function Toolbar({
             <button
               className={distributionMode === "multi" ? "active" : ""}
               onClick={() => onSetDistributionMode("multi")}
-              title="Карточка отображается во всех группах, в которые она входит (регламент МТС)"
+              title="Критические инциденты отображаются только в колонке «Критические». Остальные — во всех своих группах."
             >
               Во всех группах (мульти)
             </button>

@@ -14,7 +14,7 @@ import { SIGNIFICANCE_ORDER } from "./data";
 import {
   formatSla,
   getIncidentGroups,
-  getPrimaryGroup,
+  getIncidentBoardGroups,
   playChime,
   fetchIncidents,
   resolveIncident,
@@ -33,6 +33,7 @@ import { Icon, AlertBanner, LiveToast } from "./components/common";
 import { Sidebar, Header } from "./components/layout";
 import {
   OverviewStats,
+  AiOverview,
   Toolbar,
   BoardColumn,
   Drawer,
@@ -96,6 +97,7 @@ function Dashboard({ user, onLogout, signingOut }: { user: AuthUser; onLogout: (
   const [selected, setSelected] = useState<Incident | null>(null);
   const [query, setQuery] = useState("");
   const [secondsPassed, setSecondsPassed] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [activeNav, setActiveNav] = useState("board");
   const [incidentView, setIncidentView] = useState<IncidentView>("all");
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -116,7 +118,7 @@ function Dashboard({ user, onLogout, signingOut }: { user: AuthUser; onLogout: (
 
   // SLA countdown timer
   useEffect(() => {
-    const timer = window.setInterval(() => setSecondsPassed((val) => val + 1), 1000);
+    const timer = window.setInterval(() => { setSecondsPassed((val) => val + 1); setNow(Date.now()); }, 1000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -613,6 +615,7 @@ function Dashboard({ user, onLogout, signingOut }: { user: AuthUser; onLogout: (
               </div>
 
               {/* OVERVIEW STATS CARDS */}
+              <AiOverview incidents={incidents} now={now} onSelectIncident={setSelected} />
               <OverviewStats
                 criticalCount={criticalCount}
                 riskCount={riskCount}
@@ -641,11 +644,7 @@ function Dashboard({ user, onLogout, signingOut }: { user: AuthUser; onLogout: (
                 {allColumns.map((column) => {
                   const items = filtered.filter((incident) => {
                     if (incidentView === "research") return true;
-                    if (distributionMode === "significant") {
-                      return getPrimaryGroup(incident) === column.key;
-                    } else {
-                      return getIncidentGroups(incident).includes(column.key);
-                    }
+                    return getIncidentBoardGroups(incident, distributionMode).includes(column.key);
                   });
 
                   return (

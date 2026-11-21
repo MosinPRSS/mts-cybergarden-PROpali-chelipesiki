@@ -85,6 +85,21 @@ export interface Column {
   isCustom?: boolean;
 }
 
+export interface DashboardSummary {
+  status: "ready" | "fallback" | "empty";
+  summary: string;
+  highlights: {
+    incident: Incident;
+    reason: "critical_urgent" | "critical" | "coordinator";
+    summary: string;
+  }[];
+  limitations: string[];
+  total_candidates: number;
+  analyzed_count: number;
+  as_of: string;
+  generated_at: string | null;
+}
+
 export type DistributionMode = "significant" | "multi";
 export type IncidentView = "all" | "research" | "team";
 

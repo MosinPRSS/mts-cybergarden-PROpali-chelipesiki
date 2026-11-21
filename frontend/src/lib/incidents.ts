@@ -1,5 +1,5 @@
 import type { Incident, IncidentView } from "../types";
-import { getIncidentGroups, isIncidentResolved } from "./groups.ts";
+import { getIncidentGroups, isIncidentActive, isIncidentResolved } from "./groups.ts";
 
 export function isIncidentResearch(incident: Incident): boolean {
   return incident.status === "Research" || getIncidentGroups(incident).includes("Исследование ситуации");
@@ -7,7 +7,7 @@ export function isIncidentResearch(incident: Incident): boolean {
 
 export function matchesIncidentView(incident: Incident, view: IncidentView): boolean {
   if (view === "research") return isIncidentResearch(incident);
-  if (isIncidentResearch(incident)) return false;
+  if (!isIncidentActive(incident) || isIncidentResearch(incident)) return false;
   return view === "all" || getIncidentGroups(incident).includes("На координаторах");
 }
 

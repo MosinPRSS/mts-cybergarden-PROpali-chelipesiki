@@ -16,6 +16,7 @@ from models import Incident
 from routers.incidents import router as incidents_router
 from routers.auth import router as auth_router
 from routers.sse import router as sse_router
+from routers.summary import router as summary_router
 from schemas.incidents import HealthResponse
 from services.users import seed_default_users
 
@@ -85,6 +86,7 @@ app = FastAPI(
 )
 # Register the static /stream route before /{incident_id}.
 app.include_router(sse_router)
+app.include_router(summary_router)
 app.include_router(incidents_router)
 app.include_router(auth_router)
 

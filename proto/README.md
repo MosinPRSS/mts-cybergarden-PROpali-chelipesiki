@@ -1,7 +1,7 @@
 # Контракт сводки инцидента
 
-`generate.proto` описывает один unary RPC:
-`ai.v1.IncidentSummaryService/GenerateIncidentSummary`.
+`generate.proto` описывает unary RPC `GenerateIncidentSummary` и
+`GenerateDashboardSummary` сервиса `ai.v1.IncidentSummaryService`.
 Backend выступает клиентом, сервис в `ai/` — сервером. Сервер запускается через
 Docker Compose и вызывает DeepSeek по HTTP. Проверки запроса и ответа реализованы;
 выборка связанных записей остаётся задачей backend. Инструкция — в `ai/README.md`.
@@ -120,3 +120,10 @@ python -m grpc_tools.protoc -I proto \
 ```
 
 Сгенерированные файлы в репозиторий на этом этапе не добавляются.
+## Обзор главной страницы
+
+`GenerateDashboardSummary` принимает упорядоченные backend снимки активных
+инцидентов, время анализа и полное число кандидатов. Возвращает общий обзор,
+пояснения к первым трём записям, ограничения и время генерации.
+Выбор и сортировку выполняет SQL; модель сохраняет переданный порядок.
+Клиент backend обновляется командой `python scripts/generate-ai-proto.py`.

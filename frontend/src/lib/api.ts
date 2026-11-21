@@ -1,4 +1,4 @@
-import type { Incident } from "../types";
+import type { DashboardSummary, Incident } from "../types";
 import { normalizeIncident } from "./incidents";
 import { COORDINATOR_ACCESS_MESSAGE, notifySessionExpired } from "./auth";
 
@@ -14,6 +14,16 @@ export async function fetchIncidents(): Promise<Incident[]> {
   const data = await res.json();
   if (!Array.isArray(data)) throw new Error("Expected an incident array");
   return data.map(normalizeIncident);
+}
+
+export async function fetchDashboardSummary(signal?: AbortSignal): Promise<DashboardSummary> {
+  const res = await fetch("/api/incidents/summary", { signal, cache: "no-store" });
+  ensureAuthorized(res);
+  const data: DashboardSummary = await res.json();
+  return {
+    ...data,
+    highlights: data.highlights.map((item) => ({ ...item, incident: normalizeIncident(item.incident) })),
+  };
 }
 
 export async function resolveIncident(id: string): Promise<Incident> {

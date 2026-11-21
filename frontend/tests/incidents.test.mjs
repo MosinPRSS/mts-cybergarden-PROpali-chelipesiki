@@ -54,6 +54,17 @@ test("a critical active incident can belong to two attention groups", () => {
   assert.deepEqual(groups.getIncidentGroups(incident({ priorityId: 4, status: "Assigned", team: "КЦ ИТ Координаторы Массовых Инцидентов" })), ["Критические", "На координаторах"]);
 });
 
+test("critical incidents occupy only the critical column in either distribution mode", () => {
+  const critical = incident({ status: "Assigned", groups: ["Критические", "На координаторах"] });
+  const high = incident({ status: "Assigned", groups: ["На координаторах", "Высокий приоритет"] });
+  for (const mode of ["multi", "significant"]) {
+    assert.deepEqual(groups.getIncidentBoardGroups(critical, mode), ["Критические"]);
+  }
+  assert.deepEqual(groups.getIncidentBoardGroups(high, "multi"), ["На координаторах", "Высокий приоритет"]);
+  assert.deepEqual(groups.getIncidentBoardGroups(high, "significant"), ["На координаторах"]);
+  assert.deepEqual(groups.getIncidentGroups(critical), ["Критические", "На координаторах"]);
+});
+
 test("Research can belong to coordinator group without being active critical", () => {
   const row = incident({ priorityId: 4, status: "Research", team: "КЦ ИТ Координаторы Массовых Инцидентов" });
   assert.deepEqual(groups.getIncidentGroups(row), ["На координаторах", "Исследование ситуации"]);
@@ -144,6 +155,21 @@ test("research has its own view even when also assigned to coordinators", async 
   assert.equal(matchesIncidentView(coordinator, "research"), false);
   assert.equal(matchesIncidentView(incident(), "team"), false);
   assert.equal(matchesIncidentView(incident({ groups: ["Исследование ситуации"] }), "research"), true);
+});
+
+test("main and team views count only unfinished incidents, with research kept separate", async () => {
+  const { matchesIncidentView } = await import("../src/lib/incidents.ts");
+  const rows = [
+    incident({ status: "Assigned", is_active: true }),
+    incident({ status: "WorkInProgress", is_active: true, groups: ["На координаторах"] }),
+    incident({ status: "Resolved", is_active: false, is_resolved: true }),
+    incident({ status: "Closed", is_resolved: true, groups: ["На координаторах"] }),
+    incident({ status: "Research", is_active: false, groups: ["Исследование ситуации", "На координаторах"] }),
+    incident({ is_active: false }),
+  ];
+  assert.equal(rows.filter((row) => matchesIncidentView(row, "all")).length, 2);
+  assert.equal(rows.filter((row) => matchesIncidentView(row, "team")).length, 1);
+  assert.equal(rows.filter((row) => matchesIncidentView(row, "research")).length, 1);
 });
 
 test("expired and imminent deadlines lead, then priority and oldest first, resolved last", async () => {

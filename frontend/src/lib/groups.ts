@@ -1,4 +1,4 @@
-import type { Incident } from "../types";
+import type { DistributionMode, Incident } from "../types";
 import { SIGNIFICANCE_ORDER } from "../data/constants.ts";
 
 export function getIncidentGroups(incident: Incident): string[] {
@@ -47,6 +47,12 @@ export function getPrimaryGroup(incident: Incident): string {
     if (groups.includes(sig)) return sig;
   }
   return groups[0] || "Прочие";
+}
+
+export function getIncidentBoardGroups(incident: Incident, mode: DistributionMode = "multi"): string[] {
+  const groups = getIncidentGroups(incident);
+  if (groups.includes("Критические")) return ["Критические"];
+  return mode === "significant" ? [getPrimaryGroup(incident)] : groups;
 }
 
 export function getGroupBadgeClass(groupName: string): string {

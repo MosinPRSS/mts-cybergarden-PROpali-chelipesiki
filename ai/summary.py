@@ -153,6 +153,23 @@ class IncidentSummaryService(generate_pb2_grpc.IncidentSummaryServiceServicer):
     def __init__(self, client: DeepSeekClient):
         self.client = client
 
+    async def GenerateDashboardSummary(self, request, context):
+        from dashboard import validate_dashboard_request, dashboard_messages, dashboard_response
+
+        try:
+            validate_dashboard_request(request)
+        except ValueError:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid dashboard summary request")
+        try:
+            result = await self.client.complete(dashboard_messages(request), timeout=context.time_remaining())
+        except DeepSeekError as error:
+            logger.warning("Dashboard provider error: %s", error.code.name)
+            await context.abort(error.code, str(error))
+        try:
+            return dashboard_response(request, result)
+        except ValueError:
+            await context.abort(grpc.StatusCode.DATA_LOSS, "Invalid dashboard completion or incident order")
+
     async def GenerateIncidentSummary(self, request, context):
         try:
             validate_request(request)

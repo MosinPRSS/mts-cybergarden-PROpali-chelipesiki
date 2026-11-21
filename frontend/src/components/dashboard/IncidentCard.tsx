@@ -1,7 +1,7 @@
 import { Incident } from "../../types";
 import {
   formatSla,
-  getIncidentGroups,
+  getIncidentBoardGroups,
   getPrimaryGroup,
   getGroupBadgeClass,
   isIncidentResolved,
@@ -20,7 +20,7 @@ export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) 
   const resolved = isIncidentResolved(incident);
   const research = isIncidentResearch(incident);
   const dangerSla = seconds !== null && seconds < 15 * 60 && !resolved;
-  const groups = getIncidentGroups(incident);
+  const groups = getIncidentBoardGroups(incident);
   const primary = research ? "Исследование ситуации" : getPrimaryGroup(incident);
   const badgeClass = resolved ? "resolved" : getGroupBadgeClass(primary);
   const statusLabel = research ? "Исследование" : resolved ? "Решён" : primary;
