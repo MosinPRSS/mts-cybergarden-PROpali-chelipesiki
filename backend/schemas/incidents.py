@@ -71,6 +71,12 @@ class IncidentCreateResponse(BaseModel):
     sseNotified: int = Field(description="Количество SSE-подписчиков, которым отправлено уведомление")
 
 
+class IncidentAssignRequest(BaseModel):
+    team: str = Field(description="Наименование команды, которой передаётся инцидент")
+    assignee: str | None = Field(default=None, description="ФИО ответственного сотрудника")
+    assignee_login: str | None = Field(default=None, description="Логин ответственного сотрудника")
+
+
 class ErrorResponse(BaseModel):
     detail: str
 

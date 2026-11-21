@@ -15,6 +15,7 @@ import {
   playChime,
   fetchIncidents,
   resolveIncident,
+  assignIncident,
   normalizeIncident,
   remainingSla,
   isIncidentActive,
@@ -32,6 +33,7 @@ import {
   BoardColumn,
   Drawer,
 } from "./components/dashboard";
+import { TeamsView } from "./components/teams";
 
 export function App() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -298,6 +300,76 @@ export function App() {
     }
   }, []);
 
+  const handleAssignTeam = useCallback(
+    async (incidentId: string, teamName: string, assigneeName?: string) => {
+      const inc = incidents.find((i) => i.id === incidentId);
+      const serviceName = inc?.service || "";
+
+      playChime("assigned");
+
+      // 1. Live toast notification
+      const toastText = `Команда «${teamName}» успешно назначена на инцидент ${incidentId}`;
+      setLiveStatus({
+        text: toastText,
+        ok: true,
+      });
+      setTimeout(() => setLiveStatus(null), 4000);
+
+      // 2. Alert banner & notification history
+      setAlertBanner({
+        type: "assigned",
+        text: `👥 Инцидент ${incidentId} (${serviceName}) передан команде «${teamName}»!`,
+      });
+      setNotifications((prev) => [
+        createNotification({
+          type: "assigned",
+          title: "Команда назначена",
+          message: `Координатор назначил команду «${teamName}» на инцидент ${incidentId} (${serviceName})`,
+          incidentId,
+          service: serviceName,
+        }),
+        ...prev,
+      ]);
+      setTimeout(() => setAlertBanner(null), 6000);
+
+      // 3. Optimistic local update
+      const nowIso = new Date().toISOString();
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === incidentId
+            ? {
+                ...item,
+                team: teamName,
+                assignee: assigneeName || item.assignee,
+                lastAssignmentToTeamDateTime: nowIso,
+                updated: nowIso,
+              }
+            : item
+        )
+      );
+
+      setSelected((prev) =>
+        prev && prev.id === incidentId
+          ? {
+              ...prev,
+              team: teamName,
+              assignee: assigneeName || prev.assignee,
+              lastAssignmentToTeamDateTime: nowIso,
+              updated: nowIso,
+            }
+          : prev
+      );
+
+      // 4. Remote backend call (non-blocking)
+      try {
+        await assignIncident(incidentId, teamName, assigneeName);
+      } catch (err) {
+        console.warn("Could not sync assignment to backend API, maintained locally:", err);
+      }
+    },
+    [incidents]
+  );
+
   const handleMarkAsRead = useCallback((id: string) => {
     setNotifications((prev) =>
       prev.map((item) => (item.id === id ? { ...item, read: true } : item))
@@ -466,85 +538,92 @@ export function App() {
         />
 
         <div className="content">
-          <div className="page-heading">
-            <div>
-              <p>
-                Оперативный центр <span>/</span> Россия
-              </p>
-              <h1>Инциденты в фокусе</h1>
-            </div>
-          </div>
+          {activeNav === "board" && (
+            <>
+              <div className="page-heading">
+                <div>
+                  <p>
+                    Оперативный центр <span>/</span> Россия
+                  </p>
+                  <h1>Инциденты в фокусе</h1>
+                </div>
+              </div>
 
-          {/* OVERVIEW STATS CARDS */}
-          <OverviewStats
-            criticalCount={criticalCount}
-            riskCount={riskCount}
-            nearestRiskSla={nearestRiskSla}
-            workloadCount={workloadCount}
-            resolvedMetCount={incidents.filter((item) => item.sla_state === "met").length}
-            resolvedWithDeadlineCount={incidents.filter((item) => item.sla_state === "met" || item.sla_state === "breached").length}
-          />
+              {/* OVERVIEW STATS CARDS */}
+              <OverviewStats
+                criticalCount={criticalCount}
+                riskCount={riskCount}
+                nearestRiskSla={nearestRiskSla}
+                workloadCount={workloadCount}
+                resolvedMetCount={incidents.filter((item) => item.sla_state === "met").length}
+                resolvedWithDeadlineCount={incidents.filter((item) => item.sla_state === "met" || item.sla_state === "breached").length}
+              />
 
-          {/* TOOLBAR & MULTI-GROUP TOGGLE */}
-          <Toolbar
-            totalCount={incidents.length}
-            myTeamCount={myTeamCount}
-            teamOnly={teamOnly}
-            onToggleTeamOnly={setTeamOnly}
-            distributionMode={distributionMode}
-            onSetDistributionMode={setDistributionMode}
-            columnsCount={allColumns.length}
-          />
+              {/* TOOLBAR & MULTI-GROUP TOGGLE */}
+              <Toolbar
+                totalCount={incidents.length}
+                myTeamCount={myTeamCount}
+                teamOnly={teamOnly}
+                onToggleTeamOnly={setTeamOnly}
+                distributionMode={distributionMode}
+                onSetDistributionMode={setDistributionMode}
+                columnsCount={allColumns.length}
+              />
+
+              {/* BOARD COLUMNS */}
+              <div
+                className="board"
+                style={{
+                  gridTemplateColumns: `repeat(${allColumns.length}, minmax(260px, 1fr))`,
+                }}
+              >
+                {allColumns.map((column) => {
+                  const items = filtered.filter((incident) => {
+                    if (distributionMode === "significant") {
+                      return getPrimaryGroup(incident) === column.key;
+                    } else {
+                      return getIncidentGroups(incident).includes(column.key);
+                    }
+                  });
+
+                  return (
+                    <BoardColumn
+                      key={column.key}
+                      column={column}
+                      items={items}
+                      slaFor={slaFor}
+                      onSelectIncident={setSelected}
+                      onResolveIncident={handleResolve}
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* TEAMS MODULE */}
+          {activeNav === "teams" && (
+            <TeamsView
+              incidents={incidents}
+              onAssignTeam={handleAssignTeam}
+              onSelectIncident={setSelected}
+            />
+          )}
 
           {/* OTHER NAV MODULES */}
-          {activeNav !== "board" && (
+          {activeNav !== "board" && activeNav !== "teams" && (
             <div className="module-message">
               <Icon
-                name={
-                  activeNav === "analytics" ? "smart_toy" : activeNav === "teams" ? "users" : "history"
-                }
+                name={activeNav === "analytics" ? "smart_toy" : "history"}
                 size={30}
               />
               <h2>
                 {activeNav === "analytics"
                   ? "Ассистент"
-                  : activeNav === "teams"
-                    ? "Команды"
-                    : "История инцидентов"}
+                  : "История инцидентов"}
               </h2>
               <p>Раздел доступен из рабочего контура. Вернитесь к активным инцидентам.</p>
               <button onClick={() => setActiveNav("board")}>К доске инцидентов</button>
-            </div>
-          )}
-
-          {/* BOARD COLUMNS */}
-          {activeNav === "board" && (
-            <div
-              className="board"
-              style={{
-                gridTemplateColumns: `repeat(${allColumns.length}, minmax(260px, 1fr))`,
-              }}
-            >
-              {allColumns.map((column) => {
-                const items = filtered.filter((incident) => {
-                  if (distributionMode === "significant") {
-                    return getPrimaryGroup(incident) === column.key;
-                  } else {
-                    return getIncidentGroups(incident).includes(column.key);
-                  }
-                });
-
-                return (
-                  <BoardColumn
-                    key={column.key}
-                    column={column}
-                    items={items}
-                    slaFor={slaFor}
-                    onSelectIncident={setSelected}
-                    onResolveIncident={handleResolve}
-                  />
-                );
-              })}
             </div>
           )}
         </div>
@@ -557,6 +636,7 @@ export function App() {
           seconds={slaFor(selected)}
           onClose={() => setSelected(null)}
           onResolve={handleResolve}
+          onAssignTeam={handleAssignTeam}
         />
       )}
 

@@ -17,3 +17,20 @@ export async function resolveIncident(id: string): Promise<Incident> {
   const data = await res.json();
   return normalizeIncident(data);
 }
+
+export async function assignIncident(
+  id: string,
+  team: string,
+  assignee?: string
+): Promise<Incident> {
+  const res = await fetch(`/api/incidents/${encodeURIComponent(id)}/assign`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ team, assignee }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return normalizeIncident(data);
+}

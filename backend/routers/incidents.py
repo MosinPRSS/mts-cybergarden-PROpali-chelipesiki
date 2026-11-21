@@ -11,7 +11,7 @@ from core.db import get_db
 from core.sse_manager import sse_manager
 from domain.incidents import IncidentSource, IncidentState
 from models import Incident
-from schemas.incidents import ErrorResponse, IncidentCreate, IncidentCreateResponse, IncidentResponse
+from schemas.incidents import ErrorResponse, IncidentAssignRequest, IncidentCreate, IncidentCreateResponse, IncidentResponse
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -71,6 +71,47 @@ async def resolve_incident(incident_id: str, db: DatabaseSession):
     payload["state"] = "Решён"
     payload["completionDate"] = incident.completion_date.isoformat()
     incident.source_payload = payload
+
+    await db.commit()
+    await db.refresh(incident)
+
+    all_incidents = await db.scalars(
+        select(Incident).order_by(Incident.submit_date.desc(), Incident.id)
+    )
+    full_snapshot = [inc.to_dict() for inc in all_incidents.unique().all()]
+    await sse_manager.broadcast_all(full_snapshot)
+
+    return incident.to_dict()
+
+
+@router.post(
+    "/{incident_id}/assign",
+    response_model=IncidentResponse,
+    summary="Назначить команду на инцидент",
+    description="Обновляет назначенную команду (assignedGroupName), фиксирует дату назначения и рассылает SSE.",
+    responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
+)
+async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: DatabaseSession):
+    incident = await db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    now = datetime.now(timezone.utc)
+    incident.assigned_group_name = payload.team
+    if payload.assignee:
+        incident.assigned_employee = payload.assignee
+    if payload.assignee_login:
+        incident.assigned_employee_login = payload.assignee_login
+    incident.last_assignment_to_team_date_time = now
+    incident.updated_at = now
+
+    source_data = deepcopy(incident.source_payload or {})
+    source_data["assignedGroupName"] = incident.assigned_group_name
+    source_data["assignedEmployee"] = incident.assigned_employee
+    if payload.assignee_login:
+        source_data["assignedEmployeeLogin"] = incident.assigned_employee_login
+    source_data["lastAssignmentToTeamDateTime"] = now.isoformat()
+    incident.source_payload = source_data
 
     await db.commit()
     await db.refresh(incident)

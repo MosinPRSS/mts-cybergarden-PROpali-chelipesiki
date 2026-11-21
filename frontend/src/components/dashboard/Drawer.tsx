@@ -1,17 +1,26 @@
+import { useState } from "react";
 import { Incident } from "../../types";
 import { formatSla, getIncidentGroups, getPrimaryGroup, getGroupBadgeClass, isIncidentResolved } from "../../lib";
 import { Icon } from "../common/Icon";
+import { TEAMS_DATA } from "../../data/teams";
+import { getRecommendedTeamsForIncident } from "../../lib/teams";
 
 interface DrawerProps {
   incident: Incident;
   seconds: number | null;
   onClose: () => void;
   onResolve?: (incident: Incident) => void;
+  onAssignTeam?: (incidentId: string, teamName: string) => void;
 }
 
-export function Drawer({ incident, seconds, onClose, onResolve }: DrawerProps) {
+export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam }: DrawerProps) {
+  const [selectedTeamName, setSelectedTeamName] = useState(incident.team || "");
+  const [isChangingTeam, setIsChangingTeam] = useState(false);
   const groups = getIncidentGroups(incident);
   const primary = getPrimaryGroup(incident);
+
+  const recommendations = getRecommendedTeamsForIncident(incident, TEAMS_DATA);
+  const topRecommendation = recommendations.length > 0 ? recommendations[0] : null;
   return (
     <div className="drawer-layer">
       <button className="drawer-backdrop" onClick={onClose} aria-label="Закрыть панель" />
@@ -57,8 +66,85 @@ export function Drawer({ incident, seconds, onClose, onResolve }: DrawerProps) {
           </section>
           {incident.solution && <section className="drawer-section"><div className="section-title"><h3>Решение из выгрузки</h3></div><p>{incident.solution}</p></section>}
           <section className="drawer-section">
-            <div className="section-title"><h3>Ответственные</h3></div>
-            <div className="owner-row"><span className="avatar">{incident.assignee?.slice(0, 1) || "—"}</span><div><b>{incident.assignee || "Не назначен"}</b><small>{incident.team}</small></div></div>
+            <div className="section-title"><h3>Ответственные и команда</h3></div>
+            <div className="owner-row">
+              <span className="avatar">{incident.assignee?.slice(0, 1) || "—"}</span>
+              <div>
+                <b>{incident.assignee || "Не назначен"}</b>
+                <small>{incident.team}</small>
+              </div>
+            </div>
+
+            {/* AI Assistant recommendation for incident assignment */}
+            {topRecommendation && topRecommendation.team.name !== incident.team && !isIncidentResolved(incident) && onAssignTeam && (
+              <div className="drawer-ai-rec-box">
+                <div className="ai-rec-title">
+                  <Icon name="spark" size={14} />
+                  <span>Ассистент рекомендует команду:</span>
+                </div>
+                <div className="ai-rec-body">
+                  <strong>{topRecommendation.team.name}</strong>
+                  <p>{topRecommendation.reason}</p>
+                  <button
+                    className="ai-rec-assign-btn"
+                    onClick={() => {
+                      onAssignTeam(incident.id, topRecommendation.team.name);
+                    }}
+                  >
+                    <Icon name="check" size={13} />
+                    Назначить рекомендованную команду
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Reassign Team Selector for Coordinator */}
+            {!isIncidentResolved(incident) && onAssignTeam && (
+              <div className="drawer-assign-controls">
+                {!isChangingTeam ? (
+                  <button
+                    className="change-team-toggle-btn"
+                    onClick={() => setIsChangingTeam(true)}
+                  >
+                    <Icon name="users" size={14} />
+                    Изменить команду назначения
+                  </button>
+                ) : (
+                  <div className="drawer-team-selector-form">
+                    <label>Выберите команду из реестра:</label>
+                    <div className="team-select-row">
+                      <select
+                        value={selectedTeamName}
+                        onChange={(e) => setSelectedTeamName(e.target.value)}
+                      >
+                        {TEAMS_DATA.map((t) => (
+                          <option key={t.id} value={t.name}>
+                            {t.name} ({t.domain})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="save-team-btn"
+                        onClick={() => {
+                          if (selectedTeamName && selectedTeamName !== incident.team) {
+                            onAssignTeam(incident.id, selectedTeamName);
+                          }
+                          setIsChangingTeam(false);
+                        }}
+                      >
+                        Привязать
+                      </button>
+                      <button
+                        className="cancel-team-btn"
+                        onClick={() => setIsChangingTeam(false)}
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         </div>
         <div className="drawer-actions">
