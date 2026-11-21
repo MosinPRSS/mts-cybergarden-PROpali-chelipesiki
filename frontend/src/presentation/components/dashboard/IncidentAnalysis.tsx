@@ -10,7 +10,7 @@ export function IncidentAnalysis({ incident, onSelectRelated }: {
 
   return <section className="ai-analysis" aria-busy={loading}>
     <div className="ai-title"><Icon name="spark" size={17} /><b>ИИ-анализ</b></div>
-    <p>{result?.summary || "Выжимка проблемы и следующий шаг с учётом до пяти похожих случаев."}</p>
+    <p>{result?.summary || "Выжимка проблемы и следующий шаг с учётом схожих случаев."}</p>
     {result?.related_incidents_used.map((item) => <div className="ai-related" key={item.incident_id}>
       <button type="button" className="text-action" onClick={() => onSelectRelated?.(item.incident_id)}>{item.incident_id}</button>
       <span>{item.contribution}</span>

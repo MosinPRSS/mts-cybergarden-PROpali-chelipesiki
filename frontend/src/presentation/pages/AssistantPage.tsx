@@ -8,7 +8,6 @@ export function AssistantPage({ incidents, now, onSelectIncident }: {
 }) {
   return <>
     <div className="page-heading"><div>
-      <p>Оперативный центр <span>/</span> Ассистент</p>
       <h1>Просроченные инциденты</h1>
     </div></div>
     <AiOverview incidents={incidents} now={now} mode="overdue" onSelectIncident={onSelectIncident} />

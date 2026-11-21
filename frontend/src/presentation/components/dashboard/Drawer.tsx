@@ -53,11 +53,11 @@ export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam, on
             </div>
           </section>
           <section className="drawer-section">
+            <IncidentAnalysis key={`${incident.id}:${incident.updated}`} incident={incident} onSelectRelated={onSelectRelated} />
             <div className="section-title"><h3>Описание инцидента</h3></div>
             <p>{incident.description || incident.summary}</p>
             {incident.sourceService && <p>Сервис: {incident.sourceService}</p>}
           </section>
-          <IncidentAnalysis key={`${incident.id}:${incident.updated}`} incident={incident} onSelectRelated={onSelectRelated} />
           <section className="drawer-section">
             <div className="section-title"><h3>Даты из ITSM</h3></div>
             <p>Регистрация: {incident.created || "—"}</p>

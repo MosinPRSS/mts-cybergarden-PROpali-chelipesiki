@@ -90,11 +90,6 @@ export function TeamsView({
       {/* PAGE HEADER */}
       <div className="teams-header-row">
         <div>
-          <div className="breadcrumb-line">
-            <span>Оперативный центр</span>
-            <span>/</span>
-            <span>Маршрутизация</span>
-          </div>
           <h1>Команды реагирования</h1>
           <p className="page-desc">
             Реестр дежурных инженерных смен и сервисных команд. Роль координатора позволяет привязывать инциденты и маршрутизировать задачи по совпадению компетенций.
