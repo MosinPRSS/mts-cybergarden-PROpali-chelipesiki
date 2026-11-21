@@ -11,7 +11,9 @@ export function Sidebar({ activeNav, onSelectNav, criticalCount }: SidebarProps)
   return (
     <aside className="sidebar">
       <div className="brand" aria-label="MTS Incident Command">
-        <span className="brand-mark">М</span>
+        <span className="brand-mark">
+          <img src="/image.png" alt="icon" />
+        </span>
         <span className="brand-copy">
           Incident
           <br />

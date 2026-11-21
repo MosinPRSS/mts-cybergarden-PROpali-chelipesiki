@@ -11,6 +11,30 @@ from routers.incidents import router as incidents_router
 from routers.sse import router as sse_router
 from schemas.incidents import HealthResponse
 
+from alembic import command
+from alembic.config import Config
+from sqlalchemy.engine import Connection
+
+
+def apply_migrations(connection: Connection) -> None:
+    config_path = Path(__file__).resolve().parent / "alembic.ini"
+    config = Config(str(config_path))
+    config.attributes["connection"] = connection
+
+    command.upgrade(config, "head")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(apply_migrations)
+
+        yield  # Миграции завершены — API начинает обслуживать запросы.
+    finally:
+        sse_manager.close_all()
+        await engine.dispose()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,18 +46,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="МТС — дашборд координатора инцидентов",
+    title="API",
     version="0.2.0",
-    description=(
-        "API дашборда координатора. PostgreSQL хранит пользователей и инциденты; "
-        "SSE передаёт обновления подключённым клиентам.\n\n"
-        "Начальный список: `GET /api/incidents`. Обновления: "
-        "`GET /api/incidents/stream` через EventSource. SSE — бесконечный ответ, "
-        "поэтому его удобнее проверять через EventSource или curl -N.\n\n"
-        "Формат исходной выгрузки сохранён; группы и SLA вычисляются по её атрибутам. "
-        "Группы внимания доступны только для чтения. Автоматическое слежение за JSON, "
-        "авторизация и Telegram-бот пока не реализованы."
-    ),
     docs_url="/docs", redoc_url="/redoc", openapi_url="/openapi.json",
     openapi_tags=[
         {"name": "incidents", "description": "Чтение инцидентов из БД и подписка на обновления."},

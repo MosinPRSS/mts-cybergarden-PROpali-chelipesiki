@@ -19,7 +19,7 @@ class Setup(BaseSettings):
     POSTGRES_DB: str = "mts_incidents"
     POSTGRES_USER: str = "mts"
     POSTGRES_PASSWORD: str = Field(default="", repr=False)
-    POSTGRES_HOST: str = "127.0.0.1"
+    POSTGRES_HOST: str = "db"
     POSTGRES_PORT: int = 5432
     SECRET_KEY: str = Field(default_factory=lambda: token_urlsafe(32), repr=False)
     ALGORITHM: str = "HS256"
