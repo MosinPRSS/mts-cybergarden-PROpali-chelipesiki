@@ -3,6 +3,8 @@ import type { Incident } from "../../../domain/incidents/types.ts";
 import type { SummaryMode, SummaryWindow } from "../../../domain/analysis.ts";
 import { useDashboardSummary } from "../../../application/analysis/useDashboardSummary.ts";
 import { remainingSla } from "../../../domain/incidents/sla.ts";
+import { matchesOverdueFilters } from "../../../domain/incidents/summary.ts";
+import type { OverdueAge, OverduePriority } from "../../../domain/incidents/summary.ts";
 import { formatSla } from "../../formatters.ts";
 import { Icon } from "../common/Icon";
 
@@ -30,9 +32,13 @@ interface AiOverviewProps {
 
 export function AiOverview({ incidents, now, mode = "upcoming", onSelectIncident }: AiOverviewProps) {
   const [windowMinutes, setWindowMinutes] = useState<SummaryWindow>(30);
+  const [priority, setPriority] = useState<OverduePriority>("all");
+  const [age, setAge] = useState<OverdueAge>("all");
   const { overview, loading, error, highlights, candidateCount, refresh } = useDashboardSummary(incidents, now, mode, windowMinutes);
   const windowLabel = windows.find((item) => item.minutes === windowMinutes)!.label;
   const overdue = mode === "overdue";
+  const visibleHighlights = overdue
+    ? highlights.filter(({ incident }) => matchesOverdueFilters(incident, now, priority, age)) : highlights;
   const title = overdue ? "Разбор просроченных инцидентов" : "Решить в ближайшее время";
   const empty = overdue ? "Просроченных активных инцидентов нет." : "Активных инцидентов со сроком в выбранный период нет.";
 
@@ -47,6 +53,28 @@ export function AiOverview({ incidents, now, mode = "upcoming", onSelectIncident
           </span>
         </div>
         <div className="ai-overview-actions">
+          {overdue && <>
+            <label className="ai-overview-window">
+              <span>Приоритет</span>
+              <select aria-label="Приоритет инцидента" value={priority} onChange={(event) => setPriority(event.target.value as OverduePriority)}>
+                <option value="all">Все приоритеты</option>
+                <option value="4">Критические</option>
+                <option value="3">Высокий</option>
+                <option value="2">Средний</option>
+                <option value="1">Низкий</option>
+              </select>
+            </label>
+            <label className="ai-overview-window">
+              <span>Просрочка</span>
+              <select aria-label="Длительность просрочки" value={age} onChange={(event) => setAge(event.target.value as OverdueAge)}>
+                <option value="all">За всё время</option>
+                <option value="under_hour">Меньше часа</option>
+                <option value="one_to_six">От 1 до 6 часов</option>
+                <option value="six_to_day">От 6 до 24 часов</option>
+                <option value="day_or_more">От суток</option>
+              </select>
+            </label>
+          </>}
           {!overdue && <label className="ai-overview-window">
             <span>До просрочки</span>
             <select aria-label="Время до просрочки" value={windowMinutes} onChange={(event) => setWindowMinutes(Number(event.target.value) as SummaryWindow)}>
@@ -62,8 +90,9 @@ export function AiOverview({ incidents, now, mode = "upcoming", onSelectIncident
         <p className="ai-overview-summary">{error ? "Не удалось обновить ИИ-обзор. Актуальные записи показаны с подсказками по правилам." : overview?.summary || (!candidateCount ? empty : overdue
           ? `Просрочено по данным источника: ${candidateCount}. Сначала подтвердите актуальность статусов.`
           : `Срок решения: ${windowLabel.toLowerCase()}. Просроченные исключены.`)}</p>
-        {highlights.length > 0 && <div className="ai-overview-grid">
-          {highlights.map(({ incident, reason, summary, analyzed }, index) => {
+        {overdue && candidateCount > 0 && visibleHighlights.length === 0 && <p className="ai-overview-empty">Нет инцидентов по выбранным фильтрам.</p>}
+        {visibleHighlights.length > 0 && <div className="ai-overview-grid">
+          {visibleHighlights.map(({ incident, reason, summary, analyzed }, index) => {
             const seconds = remainingSla(incident, 0, now);
             return <button key={incident.id} className={`ai-focus-card ${reason}`} onClick={() => onSelectIncident(incident)}>
               <div className="ai-focus-top"><span className="ai-focus-rank">{String(index + 1).padStart(2, "0")}</span><span className="ai-focus-reason">{reasons[reason]}</span><Icon name="chevron" size={15} /></div>
@@ -77,10 +106,9 @@ export function AiOverview({ incidents, now, mode = "upcoming", onSelectIncident
         </div>}
       </div>
       <div className="ai-overview-footer">
-        <span><Icon name="filter" size={12} />{overdue ? `Все просроченные активные инциденты: ${candidateCount} · сначала влияние, затем время просрочки` : `${windowLabel} · сначала влияние, затем остаток срока · до трёх инцидентов`}</span>
+        <span><Icon name="filter" size={12} />{overdue ? `Показано ${visibleHighlights.length} из ${candidateCount} просроченных · сначала влияние, затем время просрочки` : `${windowLabel} · сначала влияние, затем остаток срока · до трёх инцидентов`}</span>
         {overview && <span>{`В анализе ${overview.analyzed_count} из ${overview.total_candidates}`}{overview.generated_at && ` · ${new Date(overview.generated_at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`}</span>}
       </div>
-      {!!overview?.limitations.length && <p className="ai-overview-limitations">{overview.limitations.join(" ")}</p>}
     </section>
   );
 }

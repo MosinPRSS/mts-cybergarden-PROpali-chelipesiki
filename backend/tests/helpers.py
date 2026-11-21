@@ -99,7 +99,11 @@ def authorize_test_user(test_case):
                           expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
                           user=User(id=1, login="test", name="Test", surname="User", role=UserRole.COORDINATOR))
     previous = app.dependency_overrides.get(get_current_session)
-    app.dependency_overrides[get_current_session] = lambda: session
+
+    async def current_session():
+        return session
+
+    app.dependency_overrides[get_current_session] = current_session
 
     def restore():
         if previous is None:
@@ -107,6 +111,7 @@ def authorize_test_user(test_case):
         else:
             app.dependency_overrides[get_current_session] = previous
     test_case.addCleanup(restore)
+    return session
 
 
 @contextmanager

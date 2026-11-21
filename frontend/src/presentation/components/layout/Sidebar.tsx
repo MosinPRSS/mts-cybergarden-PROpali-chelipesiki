@@ -6,10 +6,11 @@ interface SidebarProps {
   activeNav: string;
   onSelectNav: (key: string) => void;
   criticalCount: number;
+  overdueCount: number;
   user: AuthUser;
 }
 
-export function Sidebar({ activeNav, onSelectNav, criticalCount, user }: SidebarProps) {
+export function Sidebar({ activeNav, onSelectNav, criticalCount, overdueCount, user }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="brand" aria-label="MTS Incident Command">
@@ -17,19 +18,21 @@ export function Sidebar({ activeNav, onSelectNav, criticalCount, user }: Sidebar
           <img src="/image.png" alt="МТС" />
         </span>
         <span className="brand-copy">
-          Incident
+          Accident
           <br />
-          Command
+          Commander
         </span>
       </div>
 
       <nav>
         {NAVIGATION_ITEMS.map(({ key, icon, label }) => {
-          const badge = key === "board" && criticalCount > 0 ? String(criticalCount) : "";
+          const count = key === "board" ? criticalCount : key === "analytics" ? overdueCount : 0;
+          const badge = count > 0 ? String(count) : "";
           return (
             <button
               key={key}
               className={activeNav === key ? "active" : ""}
+              aria-label={key === "analytics" ? `${label}: просроченных инцидентов ${overdueCount}` : label}
               onClick={() => onSelectNav(key)}
             >
               <Icon name={icon} />

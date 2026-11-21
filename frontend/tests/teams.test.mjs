@@ -6,7 +6,7 @@ import {
   matchIncidentToTeam,
   getRecommendedTeamsForIncident,
   getRecommendedIncidentsForTeam,
-} from "../src/lib/teams.ts";
+} from "../src/domain/teams/matching.ts";
 
 test("TEAMS_DATA contains required teams with valid schema", () => {
   assert.ok(TEAMS_DATA.length >= 8, "Expected at least 8 predefined teams");

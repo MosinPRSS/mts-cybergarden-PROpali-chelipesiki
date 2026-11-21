@@ -2,13 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createNotification,
-  formatNotificationTime,
   seedInitialNotifications,
-  loadNotifications,
-  saveNotifications,
   MAX_NOTIFICATIONS_STORED,
   incidentNotifications,
-} from "../src/lib/notifications.ts";
+} from "../src/domain/notifications/events.ts";
+import { loadNotifications, saveNotifications } from "../src/infrastructure/browser/notificationStorage.ts";
+import { formatNotificationTime } from "../src/presentation/formatters.ts";
 
 test("a batch retains every critical, coordinator and resolution event", () => {
   const row = (id, groups, status = "Assigned") => ({ id, groups, status, updated: "v2", service: "Продукт" });

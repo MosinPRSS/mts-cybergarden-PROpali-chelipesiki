@@ -3,6 +3,7 @@ import type { AuthUser } from "../../domain/auth.ts";
 import type { Incident, IncidentView } from "../../domain/incidents/types.ts";
 import { getIncidentGroups } from "../../domain/incidents/groups.ts";
 import { remainingSla } from "../../domain/incidents/sla.ts";
+import { summaryCandidates } from "../../domain/incidents/summary.ts";
 import { useIncidents } from "../../application/incidents/useIncidents.ts";
 import type { SnapshotListener } from "../../application/incidents/useIncidents.ts";
 import { useIncidentActions } from "../../application/incidents/useIncidentActions.ts";
@@ -46,13 +47,14 @@ export function DashboardPage({ user, onLogout, signingOut }: {
 
   const slaFor = useCallback((incident: Incident) => remainingSla(incident, clock.secondsPassed), [clock.secondsPassed]);
   const criticalCount = useMemo(() => incidents.filter((item) => getIncidentGroups(item).includes("Критические")).length, [incidents]);
+  const overdueCount = useMemo(() => summaryCandidates(incidents, "overdue", clock.now).length, [incidents, clock.now]);
   const selectById = useCallback((id: string) => {
     const found = incidents.find((item) => item.id === id);
     if (found) setSelected(found);
   }, [incidents]);
 
   return <div className={`app ${theme}`}>
-    <Sidebar activeNav={activeNav} onSelectNav={setActiveNav} criticalCount={criticalCount} user={user} />
+    <Sidebar activeNav={activeNav} onSelectNav={setActiveNav} criticalCount={criticalCount} overdueCount={overdueCount} user={user} />
     <main>
       <Header query={query} onQueryChange={setQuery} theme={theme}
         onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}

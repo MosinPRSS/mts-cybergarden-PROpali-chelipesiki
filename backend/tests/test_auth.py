@@ -91,8 +91,8 @@ class AuthRouteTests(unittest.IsolatedAsyncioTestCase):
         self.db.scalar.assert_not_awaited()
 
     async def test_observer_cannot_resolve(self):
-        authorize_test_user(self)
-        app.dependency_overrides[get_current_session]().user.role = UserRole.OBSERVER
+        session = authorize_test_user(self)
+        session.user.role = UserRole.OBSERVER
         async with ASGIConnection("/api/incidents/INC-1/resolve", method="POST") as client:
             status, _, _ = await client.response()
         self.assertEqual(status, 403)

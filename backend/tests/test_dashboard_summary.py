@@ -239,11 +239,6 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_static_summary_route_precedes_incident_id_and_releases_db(self):
         authorize_test_user(self)
-        from core.auth import get_current_session
-        authorized_session = app.dependency_overrides[get_current_session]()
-        async def current_session():
-            return authorized_session
-        app.dependency_overrides[get_current_session] = current_session
         db = MagicMock()
         db.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         db.rollback = AsyncMock()

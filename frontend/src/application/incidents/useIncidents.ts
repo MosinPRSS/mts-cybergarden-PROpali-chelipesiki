@@ -20,27 +20,52 @@ export function useIncidents(onSnapshot: SnapshotListener, onConnection: (status
 
   useEffect(() => {
     let active = true;
+    let connected: boolean | null = null;
     let requestNumber = 0;
+    let controller: AbortController | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let retryDelay = 1000;
+    function clearRetry() {
+      if (retry !== null) clearTimeout(retry);
+      retry = null;
+    }
     async function refresh() {
+      clearRetry();
+      controller?.abort();
+      controller = new AbortController();
       const startedAt = revision.current;
       const request = ++requestNumber;
       try {
-        const data = await gateway.list();
+        const data = await gateway.list(controller.signal);
         // HTTP responses started before an SSE update or a saved action are stale.
-        if (active && startedAt === revision.current && request === requestNumber) applySnapshot(data);
+        if (active && startedAt === revision.current && request === requestNumber) {
+          retryDelay = 1000;
+          applySnapshot(data);
+          if (connected !== null) onConnection(connected ? "connected" : "disconnected");
+        }
       } catch {
-        if (active) onConnection("load-error");
+        if (!active || request !== requestNumber || startedAt !== revision.current) return;
+        onConnection("load-error");
+        retry = setTimeout(() => { void refresh(); }, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 30000);
       }
     }
     void refresh();
     const disconnect = gateway.subscribe({
-      opened() { if (active) { onConnection("connected"); void refresh(); } },
-      snapshot(data) { if (active) applySnapshot(data); },
-      disconnected() { if (active) onConnection("disconnected"); },
+      opened() { if (active) { connected = true; onConnection("connected"); void refresh(); } },
+      snapshot(data) {
+        if (!active) return;
+        clearRetry();
+        connected = true;
+        retryDelay = 1000;
+        applySnapshot(data);
+        onConnection("connected");
+      },
+      disconnected() { if (active) { connected = false; onConnection("disconnected"); } },
       invalidMessage() { if (active) { onConnection("invalid-message"); void refresh(); } },
     });
     const stopWatching = lifecycle.onVisible(() => { void refresh(); });
-    return () => { active = false; disconnect(); stopWatching(); };
+    return () => { active = false; clearRetry(); controller?.abort(); disconnect(); stopWatching(); };
   }, [gateway, lifecycle, applySnapshot, onConnection]);
 
   const applySavedIncident = useCallback((saved: Incident) => {

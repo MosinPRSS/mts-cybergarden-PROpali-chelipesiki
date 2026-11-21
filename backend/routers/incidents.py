@@ -3,20 +3,28 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
 from core.auth import get_current_session, require_operator
-from core.sse_manager import sse_manager
 from domain.incidents import IncidentState
 from models import Incident
-from services.incidents import import_incidents
+from services.incidents import import_incidents, load_incident_snapshot, publish_incident_snapshot
 from schemas.incidents import ErrorResponse, IncidentAssignRequest, IncidentCreate, IncidentCreateResponse, IncidentResponse
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[Depends(get_current_session)])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+async def get_incident_or_404(db: AsyncSession, incident_id: str, *, for_update: bool = False) -> Incident:
+    if for_update:
+        incident = await db.get(Incident, incident_id, with_for_update=True, populate_existing=True)
+    else:
+        incident = await db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return incident
 
 
 @router.get(
@@ -26,8 +34,7 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
     description="Начальный снимок из PostgreSQL. Для последующих обновлений используется SSE-подписка.",
 )
 async def list_incidents(db: DatabaseSession):
-    result = await db.scalars(select(Incident).order_by(Incident.submit_date.desc(), Incident.id))
-    return [incident.to_dict() for incident in result.unique().all()]
+    return await load_incident_snapshot(db)
 
 
 @router.post(
@@ -39,9 +46,7 @@ async def list_incidents(db: DatabaseSession):
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
 async def resolve_incident(incident_id: str, db: DatabaseSession):
-    incident = await db.get(Incident, incident_id)
-    if incident is None:
-        raise HTTPException(status_code=404, detail="Incident not found")
+    incident = await get_incident_or_404(db, incident_id, for_update=True)
 
     now = datetime.now(timezone.utc)
     incident.state_enum = IncidentState.RESOLVED
@@ -61,11 +66,7 @@ async def resolve_incident(incident_id: str, db: DatabaseSession):
     await db.commit()
     await db.refresh(incident)
 
-    all_incidents = await db.scalars(
-        select(Incident).order_by(Incident.submit_date.desc(), Incident.id)
-    )
-    full_snapshot = [inc.to_dict() for inc in all_incidents.unique().all()]
-    await sse_manager.broadcast_all(full_snapshot)
+    await publish_incident_snapshot(db)
 
     return incident.to_dict()
 
@@ -79,9 +80,7 @@ async def resolve_incident(incident_id: str, db: DatabaseSession):
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
 async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: DatabaseSession):
-    incident = await db.get(Incident, incident_id)
-    if incident is None:
-        raise HTTPException(status_code=404, detail="Incident not found")
+    incident = await get_incident_or_404(db, incident_id, for_update=True)
 
     now = datetime.now(timezone.utc)
     incident.assigned_group_name = payload.team
@@ -103,11 +102,7 @@ async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: 
     await db.commit()
     await db.refresh(incident)
 
-    all_incidents = await db.scalars(
-        select(Incident).order_by(Incident.submit_date.desc(), Incident.id)
-    )
-    full_snapshot = [inc.to_dict() for inc in all_incidents.unique().all()]
-    await sse_manager.broadcast_all(full_snapshot)
+    await publish_incident_snapshot(db)
 
     return incident.to_dict()
 
@@ -119,9 +114,7 @@ async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: 
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
 async def get_incident(incident_id: str, db: DatabaseSession):
-    incident = await db.get(Incident, incident_id)
-    if incident is None:
-        raise HTTPException(status_code=404, detail="Incident not found")
+    incident = await get_incident_or_404(db, incident_id)
     return incident.to_dict()
 
 
@@ -133,9 +126,7 @@ async def get_incident(incident_id: str, db: DatabaseSession):
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
 async def get_incident_source(incident_id: str, db: DatabaseSession):
-    incident = await db.get(Incident, incident_id)
-    if incident is None:
-        raise HTTPException(status_code=404, detail="Incident not found")
+    incident = await get_incident_or_404(db, incident_id)
     return incident.source_payload
 
 
@@ -164,12 +155,6 @@ async def create_incident(payload: IncidentCreate, request: Request, db: Databas
     if stats["incidents_unchanged"]:
         return IncidentCreateResponse(id=payload.id, created=False, sseNotified=0)
 
-    # Отправляем полный снимок всех инцидентов через SSE
-    # (фронтенд ожидает полный массив и делает setIncidents(freshData))
-    all_incidents = await db.scalars(
-        select(Incident).order_by(Incident.submit_date.desc(), Incident.id)
-    )
-    full_snapshot = [inc.to_dict() for inc in all_incidents.unique().all()]
-    notified = await sse_manager.broadcast_all(full_snapshot)
+    notified = await publish_incident_snapshot(db)
 
     return IncidentCreateResponse(id=payload.id, created=is_new, sseNotified=notified)

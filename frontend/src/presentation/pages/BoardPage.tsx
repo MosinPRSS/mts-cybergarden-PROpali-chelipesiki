@@ -25,7 +25,7 @@ export function BoardPage({ incidents, query, now, incidentView,
 
   return <>
     <div className="page-heading"><div>
-      <p>Оперативный центр <span>/</span> Россия</p><h1>Инциденты в фокусе</h1>
+      <h1>Инциденты в фокусе</h1>
     </div></div>
     <AiOverview incidents={incidents} now={now} onSelectIncident={onSelectIncident} />
     <OverviewStats criticalCount={metrics.criticalCount} riskCount={metrics.riskCount}

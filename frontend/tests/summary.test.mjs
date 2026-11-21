@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summaryCandidates } from "../src/domain/incidents/summary.ts";
+import { summaryCandidates, matchesOverdueFilters } from "../src/domain/incidents/summary.ts";
 import { fetchDashboardSummary } from "../src/infrastructure/http/incidentApi.ts";
 
 const now = Date.parse("2026-11-21T12:00:00Z");
 const row = (id, minutes, extra = {}) => ({ id, status: "Assigned", priorityId: 2, impactId: 2,
   deadline: minutes === null ? null : new Date(now + minutes * 60000).toISOString(), ...extra });
+
+test("overdue-age filters partition exact hour, six-hour and day boundaries", () => {
+  const rows = [row("now", 0), row("short", -59), row("hour", -60), row("six", -360), row("day", -1440),
+    row("future", 1), row("unknown", null), row("invalid", 1, { deadline: "invalid" })];
+  const selected = (age) => rows.filter((item) => matchesOverdueFilters(item, now, "all", age)).map((item) => item.id);
+  assert.deepEqual(selected("under_hour"), ["now", "short"]);
+  assert.deepEqual(selected("one_to_six"), ["hour"]);
+  assert.deepEqual(selected("six_to_day"), ["six"]);
+  assert.deepEqual(selected("day_or_more"), ["day"]);
+  assert.deepEqual(selected("all"), ["now", "short", "hour", "six", "day"]);
+  assert.equal(matchesOverdueFilters(rows[0], now, "4", "all"), false);
+  assert.equal(matchesOverdueFilters({ ...rows[0], priorityId: 4 }, now, "4", "all"), true);
+});
 
 test("upcoming and overdue summaries partition deadline boundaries and exclude completed states", () => {
   const rows = [row("expired", -1), row("now", 0), row("soon", 1), row("boundary", 30),

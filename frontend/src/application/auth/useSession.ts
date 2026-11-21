@@ -23,12 +23,19 @@ export function useSession() {
     return () => { active = false; unsubscribe(); };
   }, [session]);
 
+  const userId = user?.id;
   useEffect(() => {
-    if (!user) return;
+    if (userId == null) return;
     let active = true;
+    let revision = 0;
     const check = () => {
-      session.current().catch((err) => {
-        if (active && err instanceof AuthError && (err.status === 401 || err.status === 403)) {
+      const request = ++revision;
+      session.current().then((current) => {
+        if (!active || request !== revision) return;
+        setUser((previous) => previous?.id === current.id && previous.login === current.login
+          && previous.full_name === current.full_name && previous.role === current.role ? previous : current);
+      }).catch((err) => {
+        if (active && request === revision && err instanceof AuthError && (err.status === 401 || err.status === 403)) {
           setUser(null);
           setError(err.status === 403 ? err.message : "Сессия завершена. Войдите снова.");
         }
@@ -37,7 +44,7 @@ export function useSession() {
     const timer = setInterval(check, 60000);
     const unsubscribe = lifecycle.onVisible(check);
     return () => { active = false; clearInterval(timer); unsubscribe(); };
-  }, [user, session, lifecycle]);
+  }, [userId, session, lifecycle]);
 
   async function signOut() {
     if (signingOut) return;

@@ -1,26 +1,13 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import * as groups from "../src/lib/groups.ts";
-import { formatSla, remainingSla } from "../src/lib/formatters.ts";
-import { normalizeIncident } from "../src/lib/incidents.ts";
-let originals;
-try {
-  originals = JSON.parse(await readFile(new URL("../../backend/fixtures/character_problems.json", import.meta.url), "utf8"));
-} catch {
-  try {
-    originals = JSON.parse(await readFile(new URL("../../backend-rework/fixtures/character_problems.json", import.meta.url), "utf8"));
-  } catch {
-    originals = [
-      {
-        id: "INC000021929735",
-        sysId: "179413934903718013",
-        productName: "Вечная зажигалка",
-        service: "[Вечная зажигалка] Кресло-зажигалка",
-      },
-    ];
-  }
-}
+import * as groups from "../src/domain/incidents/groups.ts";
+import { remainingSla } from "../src/domain/incidents/sla.ts";
+import { formatSla } from "../src/presentation/formatters.ts";
+import { normalizeIncident } from "../src/infrastructure/http/incidentMapper.ts";
+import { matchesIncidentView, sortIncidentsByUrgency } from "../src/domain/incidents/selectors.ts";
+
+const originals = JSON.parse(await readFile(new URL("../../backend/fixtures/character_problems.json", import.meta.url), "utf8"));
 
 const incident = (extra = {}) => ({
   id: "TEST", priority: "Низкий", service: "Продукт", area: "Компонент",
@@ -142,8 +129,7 @@ test("isResolvedOlderThanDay detects resolved incidents older than 24h", () => {
   );
 });
 
-test("research remains visible on the main board and coordinator view", async () => {
-  const { matchesIncidentView } = await import("../src/lib/incidents.ts");
+test("research remains visible on the main board and coordinator view", () => {
   const research = incident({ status: "Research", groups: ["На координаторах", "Исследование ситуации"] });
   assert.equal(matchesIncidentView(research, "research"), true);
   assert.equal(matchesIncidentView(research, "all"), true);
@@ -157,8 +143,7 @@ test("research remains visible on the main board and coordinator view", async ()
   assert.equal(matchesIncidentView(incident({ groups: ["Исследование ситуации"] }), "research"), true);
 });
 
-test("main and team views include research requiring coordinator attention", async () => {
-  const { matchesIncidentView } = await import("../src/lib/incidents.ts");
+test("main and team views include research requiring coordinator attention", () => {
   const rows = [
     incident({ status: "Assigned", is_active: true }),
     incident({ status: "WorkInProgress", is_active: true, groups: ["На координаторах"] }),
@@ -172,8 +157,7 @@ test("main and team views include research requiring coordinator attention", asy
   assert.equal(rows.filter((row) => matchesIncidentView(row, "research")).length, 1);
 });
 
-test("expired and imminent deadlines lead, then priority and oldest first, resolved last", async () => {
-  const { sortIncidentsByUrgency } = await import("../src/lib/incidents.ts");
+test("expired and imminent deadlines lead, then priority and oldest first, resolved last", () => {
   const rows = [
     incident({ id: "resolved", status: "Resolved", priorityId: 4, sla: -99999 }),
     incident({ id: "critical-new", priorityId: 4, sla: 3600, created: "2026-11-21T00:00:00Z" }),
@@ -191,8 +175,7 @@ test("expired and imminent deadlines lead, then priority and oldest first, resol
   assert.deepEqual(rows.map((row) => row.id), originalOrder);
 });
 
-test("ordering handles missing dates, missing deadlines and localized priorities deterministically", async () => {
-  const { sortIncidentsByUrgency } = await import("../src/lib/incidents.ts");
+test("ordering handles missing dates, missing deadlines and localized priorities deterministically", () => {
   const rows = [
     incident({ id: "B", priority: "Высокий", created: "invalid", sla: NaN }),
     incident({ id: "A", priority: "High", sla: null }),
@@ -202,8 +185,7 @@ test("ordering handles missing dates, missing deadlines and localized priorities
   assert.deepEqual(sortIncidentsByUrgency(rows, (row) => row.sla).map((row) => row.id), ["critical", "dated", "A", "B"]);
 });
 
-test("ordering follows the live deadline when an incident becomes urgent", async () => {
-  const { sortIncidentsByUrgency } = await import("../src/lib/incidents.ts");
+test("ordering follows the live deadline when an incident becomes urgent", () => {
   const now = Date.parse("2026-11-21T12:00:00Z");
   const rows = [
     incident({ id: "critical", priorityId: 4, deadline: "2026-11-21T13:00:00Z" }),

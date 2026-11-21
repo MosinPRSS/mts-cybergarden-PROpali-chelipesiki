@@ -6,8 +6,22 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.sse_manager import sse_manager
 from domain.incidents import IncidentSource
 from models import Incident
+
+
+async def load_incident_snapshot(session: AsyncSession) -> list[dict]:
+    result = await session.scalars(
+        select(Incident).order_by(Incident.submit_date.desc(), Incident.id)
+    )
+    return [incident.to_dict() for incident in result.unique().all()]
+
+
+async def publish_incident_snapshot(session: AsyncSession) -> int:
+    """Publish the current snapshot after the caller commits its changes."""
+    snapshot = await load_incident_snapshot(session)
+    return await sse_manager.broadcast_all(snapshot)
 
 
 def validate_export(records: object) -> list[IncidentSource]:
@@ -19,21 +33,26 @@ def validate_export(records: object) -> list[IncidentSource]:
     return incidents
 
 
-async def import_incidents(session: AsyncSession, records: object) -> dict[str, int]:
+async def import_incidents(session: AsyncSession, records: object, *, update_existing: bool = True) -> dict[str, int]:
     """Validate the whole export before writes. The caller owns the transaction.
 
     Importing source employees never creates application users or assigns roles.
     Missing IDs are retained; only explicit source changes are upserted.
+    Startup seeding sets update_existing=False to preserve working records.
     """
     parsed = validate_export(records)
     stats = {"incidents_created": 0, "incidents_updated": 0, "incidents_unchanged": 0}
     if not parsed:
         return stats
-    previous = dict((await session.execute(
-        select(Incident.id, Incident.source_payload).where(Incident.id.in_([item.id for item in parsed]))
-    )).all())
+    previous = {}
+    if update_existing:
+        previous = dict((await session.execute(
+            select(Incident.id, Incident.source_payload)
+            .where(Incident.id.in_([item.id for item in parsed]))
+            .order_by(Incident.id).with_for_update()
+        )).all())
     now = datetime.now(timezone.utc)
-    for source, raw in zip(parsed, records, strict=True):
+    for source, raw in sorted(zip(parsed, records, strict=True), key=lambda item: item[0].id):
         if source.id in previous and previous[source.id] == raw:
             stats["incidents_unchanged"] += 1
             continue
@@ -41,6 +60,12 @@ async def import_incidents(session: AsyncSession, records: object) -> dict[str, 
         values["source_payload"] = deepcopy(raw)
         values["updated_at"] = now
         statement = insert(Incident).values(**values)
+        if not update_existing:
+            created = await session.scalar(
+                statement.on_conflict_do_nothing(index_elements=[Incident.id]).returning(Incident.id)
+            )
+            stats["incidents_created" if created is not None else "incidents_unchanged"] += 1
+            continue
         statement = statement.on_conflict_do_update(
             index_elements=[Incident.id],
             set_={key: getattr(statement.excluded, key) for key in values if key != "id"},

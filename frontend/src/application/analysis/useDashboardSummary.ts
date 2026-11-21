@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Incident } from "../../domain/incidents/types.ts";
 import type { DashboardSummary, SummaryMode, SummaryWindow } from "../../domain/analysis.ts";
 import { summaryCandidates } from "../../domain/incidents/summary.ts";
 import { useServices } from "../servicesContext.ts";
+
+const REFRESH_INTERVAL = 120000;
 
 export function useDashboardSummary(incidents: Incident[], now: number, mode: SummaryMode = "upcoming", windowMinutes: SummaryWindow = 30) {
   const { analysis } = useServices();
@@ -14,6 +16,8 @@ export function useDashboardSummary(incidents: Incident[], now: number, mode: Su
   const candidates = summaryCandidates(incidents, mode, now, windowMinutes);
   // Membership changes at the selected period boundary and deadline, even without SSE.
   const revision = `${mode}:${windowMinutes}:${candidates.map((item) => `${item.id}:${item.updated}:${item.deadline}:${item.priorityId}:${item.impactId}:${item.status}:${item.team}`).join("|")}`;
+  const latestRevision = useRef(revision);
+  useEffect(() => { latestRevision.current = revision; }, [revision]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -24,10 +28,11 @@ export function useDashboardSummary(incidents: Incident[], now: number, mode: Su
       pending = true;
       setLoading(true);
       setError(false);
+      const requestedRevision = latestRevision.current;
       try {
         const data = await analysis.dashboard(controller.signal, mode, windowMinutes);
         if (data.mode !== mode || (mode === "upcoming" && data.window_minutes !== windowMinutes)) throw new Error("Unexpected summary selection");
-        if (active) { setOverview(data); setLoadedRevision(revision); }
+        if (active) { setOverview(data); setLoadedRevision(requestedRevision); }
       } catch {
         if (active) setError(true);
       } finally {
@@ -36,12 +41,13 @@ export function useDashboardSummary(incidents: Incident[], now: number, mode: Su
       }
     };
     const initial = setTimeout(load, 1000);
-    const interval = setInterval(load, 60000);
+    const interval = setInterval(load, REFRESH_INTERVAL);
     return () => { active = false; controller.abort(); clearTimeout(initial); clearInterval(interval); };
-  }, [revision, refresh, analysis, mode, windowMinutes]);
+  }, [refresh, analysis, mode, windowMinutes]);
 
   const fresh = loadedRevision === revision && overview?.mode === mode;
-  const explanations = new Map((fresh ? overview.highlights : []).map((item) => [item.incident.id, item]));
+  const compatible = overview?.mode === mode && (mode === "overdue" || overview.window_minutes === windowMinutes);
+  const explanations = new Map((compatible ? overview.highlights : []).map((item) => [item.incident.id, item]));
   // Always show every overdue entry, including during loading and provider outages.
   const highlights: DashboardSummary["highlights"] = (mode === "overdue" ? candidates : candidates.slice(0, 3))
     .map((incident) => {

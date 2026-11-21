@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import json
 import os
@@ -25,6 +26,106 @@ from tests.helpers import ASGIConnection, authorize_test_user
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "Run python -m scripts.test_database for PostgreSQL tests")
 class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
+    async def assert_serialized_actions(self, first_path, second_path, *, first_data=None,
+                                        second_data=None, expected_state="Resolved", expected_team="Исполнители"):
+        from unittest.mock import patch
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        await self.seed()
+        before_commit = asyncio.Event()
+        release = asyncio.Event()
+        original_commit = AsyncSession.commit
+        first_commit = True
+
+        async def paused_commit(db):
+            nonlocal first_commit
+            if first_commit:
+                first_commit = False
+                before_commit.set()
+                await release.wait()
+            await original_commit(db)
+
+        with patch.object(AsyncSession, "commit", paused_commit):
+            first = asyncio.create_task(self.auth_request(first_path, method="POST", data=first_data))
+            second = None
+            try:
+                await asyncio.wait_for(before_commit.wait(), timeout=3)
+                second = asyncio.create_task(self.auth_request(second_path, method="POST", data=second_data))
+                blocked = False
+                for _ in range(100):
+                    async with self.engine.connect() as connection:
+                        blocked = await connection.scalar(text("""
+                            SELECT EXISTS (
+                                SELECT 1 FROM pg_stat_activity
+                                WHERE datname = current_database() AND wait_event_type = 'Lock'
+                            )
+                        """))
+                    if blocked:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertTrue(blocked, "Second writer must wait on a real PostgreSQL row lock")
+                self.assertFalse(second.done())
+            finally:
+                release.set()
+                results = await asyncio.wait_for(asyncio.gather(
+                    *[task for task in (first, second) if task is not None], return_exceptions=True
+                ), timeout=5)
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
+                self.assertIn(result[0], (200, 201))
+
+        async with self.sessions() as db:
+            incident = await db.get(Incident, self.records[0]["id"])
+            self.assertEqual(incident.state_enum.value, expected_state)
+            self.assertEqual(incident.source_payload["stateEnum"], expected_state)
+            self.assertEqual(incident.assigned_group_name, expected_team)
+            self.assertEqual(incident.source_payload["assignedGroupName"], expected_team)
+            completion = incident.completion_date.isoformat() if incident.completion_date else None
+            self.assertEqual(incident.source_payload["completionDate"], completion)
+
+    async def test_assignment_waits_for_resolution_and_preserves_both_changes(self):
+        identifier = self.records[0]["id"]
+        await self.assert_serialized_actions(
+            f"/api/incidents/{identifier}/resolve", f"/api/incidents/{identifier}/assign",
+            second_data={"team": "Исполнители"})
+
+    async def test_resolution_waits_for_assignment_and_preserves_both_changes(self):
+        identifier = self.records[0]["id"]
+        await self.assert_serialized_actions(
+            f"/api/incidents/{identifier}/assign", f"/api/incidents/{identifier}/resolve",
+            first_data={"team": "Исполнители"})
+
+    async def test_source_import_waits_for_writer_before_comparing_payloads(self):
+        identifier = self.records[0]["id"]
+        await self.assert_serialized_actions(
+            f"/api/incidents/{identifier}/resolve", "/api/incidents", second_data=self.records[0],
+            expected_state=self.records[0]["stateEnum"], expected_team=self.records[0]["assignedGroupName"])
+
+    async def test_startup_seed_preserves_resolution_assignment_and_record_version(self):
+        await self.seed()
+        identifier = self.records[0]["id"]
+        await self.auth_request(f"/api/incidents/{identifier}/assign", method="POST", data={"team": "Исполнители"})
+        await self.auth_request(f"/api/incidents/{identifier}/resolve", method="POST")
+        async with self.sessions() as db:
+            before = (await db.get(Incident, identifier)).to_dict()
+        self.assertEqual(await self.seed(), {"incidents_created": 0, "incidents_updated": 0, "incidents_unchanged": 44})
+        async with self.sessions() as db:
+            after = (await db.get(Incident, identifier)).to_dict()
+        self.assertEqual(after, before)
+
+    async def test_explicit_seed_update_can_refresh_existing_source_data(self):
+        await self.seed()
+        identifier = self.records[0]["id"]
+        await self.auth_request(f"/api/incidents/{identifier}/resolve", method="POST")
+        async with self.sessions.begin() as db:
+            result = await seed_data(db, update_existing=True)
+        self.assertEqual(result["incidents_updated"], 1)
+        async with self.sessions() as db:
+            incident = await db.get(Incident, identifier)
+            self.assertEqual(incident.state_enum.value, self.records[0]["stateEnum"])
+            self.assertEqual(incident.source_payload, self.records[0])
+
     async def test_original_post_updates_groups_broadcasts_and_preserves_raw_payload(self):
         from core.sse_manager import sse_manager
         raw = copy.deepcopy(self.records[0])

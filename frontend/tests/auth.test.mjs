@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AuthError, fetchCurrentUser, login, logout } from "../src/lib/auth.ts";
+import { AuthError } from "../src/domain/auth.ts";
+import { fetchCurrentUser, login, logout } from "../src/infrastructure/http/authApi.ts";
 
 const user = { id: 1, login: "ivan", full_name: "Иванов Иван", role: "coordinator" };
 

@@ -9,8 +9,12 @@ function ensureAuthorized(response: Response) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }
 
-export async function fetchIncidents(): Promise<Incident[]> {
-  const res = await fetch("/api/incidents");
+export async function fetchIncidents(signal?: AbortSignal): Promise<Incident[]> {
+  const timeout = AbortSignal.timeout(15000);
+  const res = await fetch("/api/incidents", {
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    cache: "no-store",
+  });
   ensureAuthorized(res);
   const data = await res.json();
   if (!Array.isArray(data)) throw new Error("Expected an incident array");

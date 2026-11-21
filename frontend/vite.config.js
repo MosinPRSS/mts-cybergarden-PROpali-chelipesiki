@@ -8,7 +8,7 @@ export default defineConfig({
   base: './',
   build: {
     outDir: '../backend/dashboard',
-    emptyOutDir: false, // preserve incidents.json in backend/dashboard
+    emptyOutDir: true,
   },
   server: {
     proxy: {
