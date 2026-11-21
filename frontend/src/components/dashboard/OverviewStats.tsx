@@ -54,7 +54,7 @@ export function OverviewStats({
 
       <div className="overview-item quality">
         <div className="sla-ring">
-          {resolvedWithDeadlineCount ? Math.round(resolvedMetCount / resolvedWithDeadlineCount * 100) : "—"}<small>%</small>
+          {resolvedWithDeadlineCount ? Math.round(resolvedMetCount / resolvedWithDeadlineCount * 100) : "—"}%
         </div>
         <div>
           <small>Решено в срок</small>

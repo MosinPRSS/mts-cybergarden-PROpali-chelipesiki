@@ -443,7 +443,7 @@ main {
   place-items: center;
   border-radius: 50%;
   color: #35b883;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
   background:
     radial-gradient(circle closest-side, var(--surface) 76%, transparent 77% 99%),
