@@ -10,6 +10,7 @@ export interface Incident {
   productName?: string;
   sourceService?: string;
   priorityId?: number;
+  impactId?: number;
   state?: string;
   status?: string;
   is_active?: boolean;

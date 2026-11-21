@@ -10,21 +10,21 @@ from core.auth import get_current_session
 from core.db import get_db
 from models import Incident
 from ai_proto import generate_pb2 as pb
-from schemas.summary import DashboardSummary, IncidentSummary
+from schemas.summary import DashboardSummary, IncidentSummary, SummaryMode
 from services.dashboard_summary import dashboard_summary_service, priority_query, incident_snapshot
 from services.incident_summary import incident_summary_service, related_context
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[Depends(get_current_session)])
 
 
-@router.get("/summary", response_model=DashboardSummary, summary="ИИ-обзор приоритетных инцидентов")
-async def dashboard_summary(db: Annotated[AsyncSession, Depends(get_db)]):
+@router.get("/summary", response_model=DashboardSummary, summary="Сводка по ближайшим срокам или всем просроченным инцидентам")
+async def dashboard_summary(db: Annotated[AsyncSession, Depends(get_db)], mode: SummaryMode = "upcoming"):
     as_of = datetime.now(timezone.utc)
-    incidents = list((await db.scalars(priority_query(as_of))).all())
+    incidents = list((await db.scalars(priority_query(as_of, mode))).all())
     # Detach the snapshots and release the DB connection before provider latency.
     db.expunge_all()
     await db.rollback()
-    return await dashboard_summary_service.summarize(incidents, as_of)
+    return await dashboard_summary_service.summarize(incidents, as_of, mode)
 
 
 @router.get("/{incident_id}/summary", response_model=IncidentSummary, summary="ИИ-анализ инцидента с похожими случаями")

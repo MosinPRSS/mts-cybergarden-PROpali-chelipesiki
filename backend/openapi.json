@@ -52,8 +52,29 @@
         "tags": [
           "incidents"
         ],
-        "summary": "ИИ-обзор приоритетных инцидентов",
+        "summary": "Сводка по ближайшим срокам или всем просроченным инцидентам",
         "operationId": "dashboard_summary_api_incidents_summary_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "upcoming",
+                "overdue"
+              ],
+              "type": "string",
+              "default": "upcoming",
+              "title": "Mode"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -64,13 +85,18 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          }
-        ]
+        }
       }
     },
     "/api/incidents/{incident_id}/summary": {
@@ -543,10 +569,20 @@
             "type": "string",
             "enum": [
               "ready",
+              "partial",
               "fallback",
               "empty"
             ],
             "title": "Status"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "upcoming",
+              "overdue"
+            ],
+            "title": "Mode",
+            "default": "upcoming"
           },
           "summary": {
             "type": "string",
@@ -633,16 +669,19 @@
             "type": "string",
             "enum": [
               "critical_urgent",
-              "critical",
-              "coordinator",
-              "high",
-              "research"
+              "deadline_soon",
+              "overdue"
             ],
             "title": "Reason"
           },
           "summary": {
             "type": "string",
             "title": "Summary"
+          },
+          "analyzed": {
+            "type": "boolean",
+            "title": "Analyzed",
+            "default": false
           }
         },
         "type": "object",

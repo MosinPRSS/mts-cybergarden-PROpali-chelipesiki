@@ -3393,3 +3393,9 @@ main {
 button:disabled { opacity: .55; cursor: wait; }
 
 .card-group-list { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 8px; }
+
+.ai-overview-overdue .ai-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ai-focus-card.overdue .ai-focus-reason { color: #f1aa55; }
+.light .ai-focus-card.overdue .ai-focus-reason { color: #96611d; }
+.ai-focus-review { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-top: 10px; color: var(--muted); font-size: 11px; }
+@media (max-width: 900px) { .ai-overview-overdue .ai-overview-grid { grid-template-columns: 1fr; } }

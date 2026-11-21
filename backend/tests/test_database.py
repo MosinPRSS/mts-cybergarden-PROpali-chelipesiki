@@ -101,9 +101,12 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         from services.dashboard_summary import priority_query
         from tests.test_dashboard_summary import make_incident, NOW
 
+        as_of = datetime.now(timezone.utc)
         urgent = make_incident("urgent", minutes=5)
+        urgent.deadline = as_of + timedelta(minutes=5)
         critical = make_incident("critical", minutes=None)
         coordinator = make_incident("coordinator", priority=2, minutes=-20)
+        coordinator.deadline = as_of - timedelta(minutes=20)
         coordinator.assigned_group_name = COORDINATOR_TEAM
         resolved = make_incident("resolved", minutes=-60)
         resolved.state_enum = IncidentState.RESOLVED
@@ -113,25 +116,27 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         async with self.sessions.begin() as db:
             db.add_all([coordinator, critical, resolved, urgent])
         async with self.sessions() as db:
-            self.assertEqual(list(await db.scalars(priority_query(NOW).with_only_columns(Incident.id))),
-                             ["urgent", "critical", "coordinator"])
+            self.assertEqual(list(await db.scalars(priority_query(as_of).with_only_columns(Incident.id))), ["urgent"])
+            self.assertEqual(list(await db.scalars(priority_query(as_of, "overdue").with_only_columns(Incident.id))), ["coordinator"])
 
         async def generate(request):
-            self.assertEqual([item.id for item in request.incidents], ["urgent", "critical", "coordinator"])
-            response = pb.GenerateDashboardSummaryResponse(summary="Приоритетные инциденты", highlights=[
-                pb.DashboardHighlight(incident_id=item.id, summary="Проверьте восстановление")
-                for item in request.incidents[:3]])
+            expected = ["coordinator"] if request.mode == pb.SUMMARY_MODE_OVERDUE else ["urgent"]
+            self.assertEqual([item.id for item in request.incidents], expected)
+            response = pb.GenerateDashboardSummaryResponse(summary="Инциденты по срокам", highlights=[
+                pb.DashboardHighlight(incident_id=item.id, summary="Проверьте статус") for item in request.incidents])
             response.generated_at.FromDatetime(datetime.now(timezone.utc))
             return response
 
         with patch("services.dashboard_summary.generate_overview", new=AsyncMock(side_effect=generate)):
-            async with ASGIConnection("/api/incidents/summary") as client:
-                status, _, body = await client.response()
-        self.assertEqual(status, 200)
-        overview = json.loads(body)
-        self.assertEqual(overview["status"], "ready")
-        self.assertEqual(overview["analyzed_count"], 3)
-        self.assertEqual([item["incident"]["id"] for item in overview["highlights"]], ["urgent", "critical", "coordinator"])
+            for mode, expected_id in [("upcoming", "urgent"), ("overdue", "coordinator")]:
+                async with ASGIConnection(f"/api/incidents/summary?mode={mode}") as client:
+                    status, _, body = await client.response()
+                self.assertEqual(status, 200)
+                overview = json.loads(body)
+                self.assertEqual(overview["status"], "ready")
+                self.assertEqual(overview["mode"], mode)
+                self.assertEqual(overview["analyzed_count"], 1)
+                self.assertEqual([item["incident"]["id"] for item in overview["highlights"]], [expected_id])
 
     async def asyncSetUp(self):
         authorize_test_user(self)

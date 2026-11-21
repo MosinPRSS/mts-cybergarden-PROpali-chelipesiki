@@ -31,7 +31,7 @@ def make_incident(identifier="INC-1", *, minutes=10, priority=4, impact=4):
 
 
 class PrioritySQLTests(unittest.TestCase):
-    def test_sql_filters_and_orders_before_fetching(self):
+    def test_modes_partition_active_deadlines_and_keep_boundary_cases(self):
         engine = create_engine("sqlite://")
         self.addCleanup(engine.dispose)
         with engine.begin() as db:
@@ -41,72 +41,128 @@ class PrioritySQLTests(unittest.TestCase):
                 ("soon-high", 4, 5, 4, "Team", "Assigned"),
                 ("soon-low", 4, 5, 1, "Team", "Assigned"),
                 ("boundary", 4, 30, 4, "Team", "Assigned"),
-                ("later", 4, 60, 4, "Team", "Assigned"),
+                ("later", 4, 31, 4, "Team", "Assigned"),
                 ("unknown", 4, None, 4, "Team", "Assigned"),
                 ("coordinator", 2, -20, 4, COORDINATOR_TEAM, "Assigned"),
                 ("coordinator-later", 3, 5, 4, COORDINATOR_TEAM, "Assigned"),
-                ("research", 4, -50, 4, COORDINATOR_TEAM, "Research"),
+                ("low-priority", 1, 5, 1, "Team", "Assigned"),
+                ("research", 4, 5, 4, COORDINATOR_TEAM, "Research"),
                 ("resolved", 4, -50, 4, "Team", "Resolved"),
                 ("closed", 4, -50, 4, "Team", "Closed"),
-                ("other", 3, 0, 4, "Team", "Assigned"),
+                ("zero", 3, 0, 4, "Team", "Assigned"),
             ]
             for identifier, priority, minutes, impact, team, state in fixtures:
                 db.execute(text("INSERT INTO incidents VALUES (:id, :state, :priority, :deadline, :impact, :team, :submitted)"), dict(
                     id=identifier, state=state, priority=priority, impact=impact, team=team,
                     deadline=(NOW + timedelta(minutes=minutes)).replace(tzinfo=None) if minutes is not None else None,
                     submitted=(NOW - timedelta(hours=1)).replace(tzinfo=None)))
-            ids = db.scalars(priority_query(NOW).with_only_columns(Incident.id)).all()
-        self.assertEqual(ids, ["overdue", "soon-high", "soon-low", "boundary", "later", "unknown", "research", "coordinator", "coordinator-later", "other"])
+            upcoming = db.scalars(priority_query(NOW).with_only_columns(Incident.id)).all()
+            overdue = db.scalars(priority_query(NOW, "overdue").with_only_columns(Incident.id)).all()
+        self.assertEqual(upcoming, ["soon-high", "soon-low", "coordinator-later", "low-priority", "boundary"])
+        self.assertEqual(overdue, ["coordinator", "overdue", "zero"])
+        self.assertFalse(set(upcoming) & set(overdue))
+
+
+def overview_response(request):
+    selected = request.incidents if request.mode == pb.SUMMARY_MODE_OVERDUE else request.incidents[:3]
+    response = pb.GenerateDashboardSummaryResponse(summary="Обзор", highlights=[
+        pb.DashboardHighlight(incident_id=item.id, summary="Проверьте срок и ответственного") for item in selected])
+    response.generated_at.FromDatetime(NOW)
+    return response
 
 
 class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_context_is_bounded_but_statistics_cover_all_candidates(self):
-        rows = [make_incident(f"INC-{i}") for i in range(25)]
+    async def test_upcoming_context_is_bounded_but_statistics_cover_all_candidates(self):
+        rows = [make_incident(f"INC-{i:02}") for i in range(25)]
         async def generate(request):
             self.assertEqual(len(request.incidents), 20)
             self.assertEqual(request.total_candidates, 25)
             self.assertEqual(request.statistics["critical"], 25)
-            response = pb.GenerateDashboardSummaryResponse(summary="Обзор", highlights=[
-                pb.DashboardHighlight(incident_id=item.id, summary="Пояснение") for item in request.incidents[:3]])
-            response.generated_at.FromDatetime(NOW)
-            return response
+            return overview_response(request)
         with patch("services.dashboard_summary.generate_overview", new=AsyncMock(side_effect=generate)):
             result = await DashboardSummaryService().summarize(rows, NOW)
         self.assertEqual(result.analyzed_count, 20)
         self.assertEqual(result.total_candidates, 25)
+        self.assertEqual(len(result.highlights), 3)
         self.assertTrue(result.limitations)
 
-    async def test_empty_does_not_call_provider(self):
+    async def test_empty_or_ineligible_rows_do_not_call_provider(self):
+        rows = [make_incident(minutes=-1), make_incident("zero", minutes=0),
+                make_incident("later", minutes=31), make_incident("unknown", minutes=None)]
+        research = make_incident("research")
+        research.state_enum = "Research"
+        rows.append(research)
         with patch("services.dashboard_summary.generate_overview", new_callable=AsyncMock) as generate:
-            result = await DashboardSummaryService().summarize([], NOW)
+            result = await DashboardSummaryService().summarize(rows, NOW)
         self.assertEqual(result.status, "empty")
+        self.assertEqual(result.highlights, [])
         generate.assert_not_awaited()
 
-    async def test_unavailable_keeps_priority_queue(self):
-        rows = [make_incident(), make_incident("INC-2", minutes=None)]
+    async def test_unavailable_keeps_every_overdue_record_with_explicit_fallback(self):
+        rows = [make_incident(f"INC-{i:02}", minutes=-10) for i in range(27)]
         with patch("services.dashboard_summary.generate_overview", new_callable=AsyncMock, side_effect=grpc.RpcError):
-            result = await DashboardSummaryService().summarize(rows, NOW)
+            result = await DashboardSummaryService().summarize(rows, NOW, "overdue")
         self.assertEqual(result.status, "fallback")
         self.assertEqual(result.analyzed_count, 0)
         self.assertIsNone(result.generated_at)
-        self.assertEqual([item.incident.id for item in result.highlights], ["INC-1", "INC-2"])
-        self.assertEqual([item.reason for item in result.highlights], ["critical_urgent", "critical"])
+        self.assertEqual(len(result.highlights), 27)
+        self.assertTrue(all(not item.analyzed and item.reason == "overdue" for item in result.highlights))
 
-    async def test_success_cache_coalesces_and_invalidates_on_update_and_boundary(self):
-        incident = make_incident(minutes=30)
-        response = pb.GenerateDashboardSummaryResponse(summary="Обзор", highlights=[pb.DashboardHighlight(incident_id=incident.id, summary="Пояснение")])
-        response.generated_at.FromDatetime(NOW)
+    async def test_all_overdue_records_are_analyzed_in_bounded_batches_with_partial_failure(self):
+        rows = [make_incident(f"INC-{i:02}", minutes=-10) for i in range(13)]
+        running = 0
+        maximum = 0
+        async def generate(request):
+            nonlocal running, maximum
+            self.assertEqual(request.mode, pb.SUMMARY_MODE_OVERDUE)
+            self.assertLessEqual(len(request.incidents), 5)
+            self.assertEqual(request.total_candidates, 13)
+            running += 1
+            maximum = max(maximum, running)
+            await asyncio.sleep(0)
+            running -= 1
+            if request.incidents[0].id == "INC-05":
+                raise grpc.RpcError()
+            return overview_response(request)
+        with patch("services.dashboard_summary.generate_overview", new=AsyncMock(side_effect=generate)) as rpc:
+            result = await DashboardSummaryService().summarize(rows, NOW, "overdue")
+        self.assertEqual(rpc.await_count, 3)
+        self.assertLessEqual(maximum, 2)
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(result.analyzed_count, 8)
+        self.assertEqual([item.incident.id for item in result.highlights], [item.id for item in rows])
+        self.assertEqual(sum(item.analyzed for item in result.highlights), 8)
+        self.assertTrue(result.limitations)
+
+    async def test_successful_overdue_analysis_includes_every_record_beyond_twenty(self):
+        rows = [make_incident(f"INC-{i:02}", minutes=-10) for i in range(27)]
+        with patch("services.dashboard_summary.generate_overview", new=AsyncMock(side_effect=overview_response)) as rpc:
+            result = await DashboardSummaryService().summarize(rows, NOW, "overdue")
+        self.assertEqual(result.status, "ready")
+        self.assertEqual(result.analyzed_count, 27)
+        self.assertEqual(len(result.highlights), 27)
+        self.assertTrue(all(item.analyzed for item in result.highlights))
+        self.assertEqual(rpc.await_count, 6)
+
+    async def test_mode_caches_coalesce_and_expiry_moves_incidents_between_views(self):
         service = DashboardSummaryService()
-        with patch("services.dashboard_summary.generate_overview", new_callable=AsyncMock, return_value=response) as generate:
-            first, second = await asyncio.gather(service.summarize([incident], NOW), service.summarize([incident], NOW))
-            self.assertEqual(first.status, "ready")
+        soon = make_incident(minutes=1)
+        expired = make_incident("expired", minutes=-1)
+        with patch("services.dashboard_summary.generate_overview", new=AsyncMock(side_effect=overview_response)) as rpc:
+            first, second = await asyncio.gather(service.summarize([soon, expired], NOW), service.summarize([soon, expired], NOW))
             self.assertEqual(first, second)
-            self.assertEqual(generate.await_count, 1)
-            await service.summarize([incident], NOW + timedelta(seconds=1))
-            self.assertEqual(generate.await_count, 2)
-            incident.updated_at += timedelta(seconds=1)
-            await service.summarize([incident], NOW + timedelta(seconds=2))
-            self.assertEqual(generate.await_count, 3)
+            self.assertEqual(rpc.await_count, 1)
+            await service.summarize([soon, expired], NOW, "overdue")
+            await service.summarize([soon, expired], NOW)
+            self.assertEqual(rpc.await_count, 2)
+            soon.updated_at += timedelta(seconds=1)
+            await service.summarize([soon, expired], NOW)
+            self.assertEqual(rpc.await_count, 3)
+            empty = await service.summarize([soon, expired], NOW + timedelta(minutes=1))
+            self.assertEqual(empty.status, "empty")
+            all_overdue = await service.summarize([soon, expired], NOW + timedelta(minutes=1), "overdue")
+            self.assertEqual(len(all_overdue.highlights), 2)
+            self.assertEqual(rpc.await_count, 4)
 
     async def test_bad_model_ids_are_rejected(self):
         response = pb.GenerateDashboardSummaryResponse(summary="Обзор", highlights=[pb.DashboardHighlight(incident_id="invented", summary="Пояснение")])
@@ -114,6 +170,7 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         with patch("services.dashboard_summary.generate_overview", new_callable=AsyncMock, return_value=response):
             result = await DashboardSummaryService().summarize([make_incident()], NOW)
         self.assertEqual(result.status, "fallback")
+        self.assertFalse(result.highlights[0].analyzed)
 
     async def test_snapshot_preserves_null_and_false(self):
         incident = make_incident(minutes=None)
@@ -127,22 +184,24 @@ class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
         authorize_test_user(self)
         from core.auth import get_current_session
         authorized_session = app.dependency_overrides[get_current_session]()
-
         async def current_session():
             return authorized_session
-
         app.dependency_overrides[get_current_session] = current_session
         db = MagicMock()
         db.scalars = AsyncMock(return_value=MagicMock(all=MagicMock(return_value=[])))
         db.rollback = AsyncMock()
         async def database():
             return db
-
         app.dependency_overrides[get_db] = database
         self.addCleanup(app.dependency_overrides.pop, get_db)
-        async with ASGIConnection("/api/incidents/summary") as connection:
-            status, _, body = await connection.response()
-        self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)["status"], "empty")
-        db.expunge_all.assert_called_once()
-        db.rollback.assert_awaited_once()
+        for mode in ("upcoming", "overdue"):
+            async with ASGIConnection(f"/api/incidents/summary?mode={mode}") as connection:
+                status, _, body = await connection.response()
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)["status"], "empty")
+            self.assertEqual(json.loads(body)["mode"], mode)
+        self.assertEqual(db.expunge_all.call_count, 2)
+        self.assertEqual(db.rollback.await_count, 2)
+        async with ASGIConnection("/api/incidents/summary?mode=invalid") as connection:
+            status, _, _ = await connection.response()
+        self.assertEqual(status, 422)

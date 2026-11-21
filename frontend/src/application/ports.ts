@@ -1,6 +1,6 @@
 import type { AuthUser } from "../domain/auth.ts";
 import type { Incident } from "../domain/incidents/types.ts";
-import type { DashboardSummary, IncidentSummary } from "../domain/analysis.ts";
+import type { DashboardSummary, IncidentSummary, SummaryMode } from "../domain/analysis.ts";
 import type { NotificationItem } from "../domain/notifications/types.ts";
 
 export type Dispose = () => void;
@@ -28,7 +28,7 @@ export interface IncidentGateway {
 }
 
 export interface AnalysisGateway {
-  dashboard(signal?: AbortSignal): Promise<DashboardSummary>;
+  dashboard(signal?: AbortSignal, mode?: SummaryMode): Promise<DashboardSummary>;
   incident(id: string, signal?: AbortSignal): Promise<IncidentSummary>;
 }
 

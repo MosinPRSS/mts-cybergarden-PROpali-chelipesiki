@@ -16,6 +16,7 @@ import { Drawer } from "../components/dashboard";
 import { TeamsView } from "../components/teams";
 import { BoardPage } from "./BoardPage.tsx";
 import { HistoryPage } from "./HistoryPage.tsx";
+import { AssistantPage } from "./AssistantPage.tsx";
 
 export function DashboardPage({ user, onLogout, signingOut }: {
   user: AuthUser;
@@ -65,7 +66,8 @@ export function DashboardPage({ user, onLogout, signingOut }: {
           slaFor={slaFor} onSelectIncident={setSelected} onResolveIncident={actions.resolve} />}
         {activeNav === "teams" && <TeamsView incidents={incidents} onAssignTeam={actions.assign} onSelectIncident={setSelected} />}
         {activeNav === "history" && <HistoryPage incidents={incidents} query={query} slaFor={slaFor} onSelectIncident={setSelected} />}
-        {!["board", "teams", "history"].includes(activeNav) && <div className="module-message">
+        {activeNav === "analytics" && <AssistantPage incidents={incidents} now={clock.now} onSelectIncident={setSelected} />}
+        {!["board", "teams", "history", "analytics"].includes(activeNav) && <div className="module-message">
           <Icon name="history" size={30} /><h2>История инцидентов</h2>
           <p>Раздел доступен из рабочего контура. Вернитесь к активным инцидентам.</p>
           <button onClick={() => setActiveNav("board")}>К доске инцидентов</button>

@@ -6,47 +6,44 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import grpc
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import select
 
 from ai_proto import generate_pb2 as pb
 from ai_proto.generate_pb2_grpc import IncidentSummaryServiceStub
 from config import settings
-from domain.incidents import ACTIVE_STATES, COORDINATOR_TEAM, IncidentState, incident_groups
+from domain.incidents import ACTIVE_STATES, IncidentState, incident_groups
 from models import Incident
-from schemas.summary import DashboardSummary, FocusIncident
+from schemas.summary import DashboardSummary, FocusIncident, SummaryMode
 
 logger = logging.getLogger(__name__)
 
 
-def priority_query(as_of: datetime):
-    active = Incident.state_enum.in_(ACTIVE_STATES)
-    critical = and_(active, Incident.priority_id == 4)
-    coordinator = Incident.assigned_group_name == COORDINATOR_TEAM
-    urgent = and_(critical, Incident.deadline < as_of + timedelta(minutes=30))
-    return (
-        select(Incident)
-        .where(
-            or_(and_(active, or_(Incident.priority_id.in_([3, 4]), coordinator)),
-                Incident.state_enum == IncidentState.RESEARCH),
-        )
-        .order_by(
-            case((urgent, 0), (critical, 1), (coordinator, 2), (active, 3), else_=4),
-            Incident.deadline.asc().nulls_last(),
-            Incident.impact_id.desc(),
-            Incident.submit_date.asc(),
-            Incident.id.asc(),
-        )
-    )
+UPCOMING_WINDOW = timedelta(minutes=30)
+OVERDUE_BATCH_SIZE = 5
 
 
-def focus_reason(incident: Incident, as_of: datetime) -> str:
-    if incident.state_enum in ACTIVE_STATES and incident.priority_id == 4:
-        if incident.deadline is not None and incident.deadline < as_of + timedelta(minutes=30):
-            return "critical_urgent"
-        return "critical"
-    if incident.assigned_group_name == COORDINATOR_TEAM:
-        return "coordinator"
-    return "research" if incident.state_enum == IncidentState.RESEARCH else "high"
+def priority_query(as_of: datetime, mode: SummaryMode = "upcoming"):
+    deadline = (Incident.deadline <= as_of if mode == "overdue" else
+                (Incident.deadline > as_of) & (Incident.deadline <= as_of + UPCOMING_WINDOW))
+    return (select(Incident).where(Incident.state_enum.in_(ACTIVE_STATES), deadline)
+            .order_by(Incident.deadline.asc(), Incident.priority_id.desc(), Incident.impact_id.desc(),
+                      Incident.submit_date.asc(), Incident.id.asc()))
+
+
+def summary_candidates(incidents, as_of, mode: SummaryMode = "upcoming"):
+    def eligible(item):
+        if item.state_enum not in ACTIVE_STATES or item.deadline is None:
+            return False
+        return (item.deadline <= as_of if mode == "overdue" else
+                as_of < item.deadline <= as_of + UPCOMING_WINDOW)
+    return sorted((item for item in incidents if eligible(item)),
+                  key=lambda item: (item.deadline, -item.priority_id, -item.impact_id, item.submit_date, item.id))
+
+
+def focus_reason(incident: Incident, as_of: datetime, mode: SummaryMode = "upcoming") -> str:
+    if mode == "overdue":
+        return "overdue"
+    return "critical_urgent" if incident.priority_id == 4 else "deadline_soon"
 
 
 def incident_snapshot(incident: Incident):
@@ -82,76 +79,97 @@ async def generate_overview(request):
 
 
 class DashboardSummaryService:
-    def __init__(self):
-        self._lock = asyncio.Lock()
-        self._key = None
-        self._expires = 0
-        self._cached = None
+    """One pipeline with mode-specific selection, batching and independent caches."""
 
-    async def summarize(self, incidents, as_of):
+    def __init__(self):
+        self._locks = {mode: asyncio.Lock() for mode in ("upcoming", "overdue")}
+        self._cache = {}
+        self._rpc_slots = asyncio.Semaphore(2)
+
+    async def _analyze_batch(self, batch, as_of, mode, statistics, total):
+        request = pb.GenerateDashboardSummaryRequest(
+            incidents=[incident_snapshot(item) for item in batch], total_candidates=total,
+            statistics=statistics, mode=pb.SUMMARY_MODE_OVERDUE if mode == "overdue" else pb.SUMMARY_MODE_UPCOMING)
+        request.as_of.FromDatetime(as_of)
+        expected = [item.id for item in (batch if mode == "overdue" else batch[:3])]
+        try:
+            async with self._rpc_slots:
+                result = await generate_overview(request)
+            if ([item.incident_id for item in result.highlights] != expected
+                    or not result.summary.strip()
+                    or any(not item.summary.strip() for item in result.highlights)
+                    or not result.HasField("generated_at")):
+                raise ValueError("Unexpected AI summary contract")
+            return result
+        except (grpc.RpcError, ValueError) as error:
+            logger.warning("%s summary unavailable: %s", mode, type(error).__name__)
+            return None
+
+    async def summarize(self, incidents, as_of, mode: SummaryMode = "upcoming"):
+        incidents = summary_candidates(incidents, as_of, mode)
         names = {"Критические": "critical", "На координаторах": "coordinator",
                  "Высокий приоритет": "high", "Исследование ситуации": "research"}
         statistics = dict.fromkeys([*names.values(), "overdue"], 0)
         for item in incidents:
             for group in incident_groups(item.state_enum, item.priority_id, item.assigned_group_name):
                 statistics[names[group]] += 1
-            if item.state_enum in ACTIVE_STATES and item.deadline and item.deadline <= as_of:
-                statistics["overdue"] += 1
+        statistics["overdue"] = len(incidents) if mode == "overdue" else 0
         if not incidents:
-            return DashboardSummary(
-                status="empty", summary="В четырёх группах внимания инцидентов нет.",
-                highlights=[], limitations=[], total_candidates=0, analyzed_count=0, as_of=as_of, statistics=statistics,
-            )
-        # All eligible rows are fetched by SQL, with no dependency on board filters.
-        selected = incidents[:20]
-        request = pb.GenerateDashboardSummaryRequest(total_candidates=len(incidents), statistics=statistics)
-        request.as_of.FromDatetime(as_of)
-        for incident in selected:
-            request.incidents.add().CopyFrom(incident_snapshot(incident))
-        # Version, ordering and the 30-minute boundary invalidate the cache immediately.
-        key = (tuple(sorted(statistics.items())), tuple((item.id, item.updated_at, focus_reason(item, as_of),
-                     item.deadline, item.priority_id, item.impact_id, item.assigned_group_name)
-                    for item in incidents))
-        async with self._lock:
-            if key == self._key and self._cached is not None and time.monotonic() < self._expires:
-                return self._cached
-            highlights = [FocusIncident(
-                incident=incident.to_dict(now=as_of), reason=focus_reason(incident, as_of),
-                summary={
-                    "critical_urgent": "Критический инцидент: проверьте восстановление, срок и ответственного.",
-                    "critical": "Критический инцидент: проверьте ход восстановления и ответственного.",
-                    "coordinator": "Требует маршрутизации: проверьте назначение команды.",
-                    "high": "Высокий приоритет: проверьте ход работ и риск задержки.",
-                    "research": "Сервис восстановлен: требуется разбор причин.",
-                }[focus_reason(incident, as_of)],
-            ) for incident in selected[:3]]
-            response = DashboardSummary(
-                status="fallback", summary="Приоритетные инциденты по срокам и влиянию.",
-                highlights=highlights, limitations=["ИИ-обзор временно недоступен. Показана очередь по правилам приоритета."],
-                total_candidates=len(incidents), analyzed_count=0, as_of=as_of, statistics=statistics,
-            )
-            try:
-                result = await generate_overview(request)
-                expected = [item.id for item in selected[:3]]
-                if ([item.incident_id for item in result.highlights] != expected
-                        or not result.summary.strip()
-                        or any(not item.summary.strip() for item in result.highlights)
-                        or not result.HasField("generated_at")):
-                    raise ValueError("Unexpected AI summary contract")
-                for highlight, explanation in zip(highlights, result.highlights, strict=True):
-                    highlight.summary = explanation.summary
-                response.status = "ready"
-                response.summary = result.summary
-                response.limitations = list(result.limitations)
-                response.generated_at = result.generated_at.ToDatetime(tzinfo=timezone.utc)
-                response.analyzed_count = len(selected)
-            except (grpc.RpcError, ValueError) as error:
-                logger.warning("Dashboard summary unavailable: %s", type(error).__name__)
-            self._key = key
-            self._cached = response
+            return DashboardSummary(status="empty", mode=mode,
+                summary="Просроченных активных инцидентов нет." if mode == "overdue" else
+                        "Активных инцидентов со сроком в ближайшие 30 минут нет.",
+                highlights=[], limitations=[], total_candidates=0, analyzed_count=0,
+                as_of=as_of, statistics=statistics)
+
+        key = tuple(incident_snapshot(item).SerializeToString(deterministic=True) for item in incidents)
+        async with self._locks[mode]:
+            cached = self._cache.get(mode)
+            if cached and cached[0] == key and time.monotonic() < cached[1]:
+                return cached[2]
+            shown = incidents if mode == "overdue" else incidents[:3]
+            selected = incidents if mode == "overdue" else incidents[:20]
+            batches = ([selected[i:i + OVERDUE_BATCH_SIZE] for i in range(0, len(selected), OVERDUE_BATCH_SIZE)]
+                       if mode == "overdue" else [selected])
+            fallback_text = ("Срок в источнике истёк. Подтвердите фактический статус у ответственного; "
+                             "если инцидент актуален, уточните причину задержки и следующий шаг."
+                             if mode == "overdue" else
+                             "Срок истекает в ближайшие 30 минут. Проверьте ход восстановления и ответственного.")
+            response = DashboardSummary(status="fallback", mode=mode,
+                summary=(f"Просрочено по данным источника: {len(incidents)}. Сначала подтвердите актуальность статусов."
+                         if mode == "overdue" else "Инциденты с ближайшими сроками решения."),
+                highlights=[FocusIncident(incident=item.to_dict(now=as_of), reason=focus_reason(item, as_of, mode),
+                                          summary=fallback_text) for item in shown],
+                limitations=[], total_candidates=len(incidents), analyzed_count=0,
+                as_of=as_of, statistics=statistics)
+            results = await asyncio.gather(*(self._analyze_batch(batch, as_of, mode, statistics, len(incidents))
+                                             for batch in batches))
+            explanations = {}
+            generated = []
+            for batch, result in zip(batches, results, strict=True):
+                if result is None:
+                    continue
+                explanations.update({item.incident_id: item.summary for item in result.highlights})
+                response.analyzed_count += len(batch)
+                generated.append(result.generated_at.ToDatetime(tzinfo=timezone.utc))
+                response.limitations.extend(result.limitations)
+            for item in response.highlights:
+                if item.incident.id in explanations:
+                    item.summary = explanations[item.incident.id]
+                    item.analyzed = True
+            successful = sum(result is not None for result in results)
+            if successful:
+                response.status = "ready" if successful == len(batches) else "partial"
+                response.generated_at = max(generated)
+                if mode == "upcoming":
+                    response.summary = results[0].summary
+            if successful != len(batches):
+                response.limitations.append(
+                    "Часть ИИ-анализа недоступна. Все записи показаны; для необработанных даны подсказки по правилам."
+                    if mode == "overdue" else "ИИ-обзор недоступен. Ближайшие инциденты показаны с подсказками по правилам.")
             if len(incidents) > len(selected):
-                response.limitations.append(f"Подробно рассмотрены первые {len(selected)} из {len(incidents)} инцидентов; счётчики охватывают все группы.")
-            self._expires = time.monotonic() + (300 if response.status == "ready" else 15)
+                response.limitations.append(f"В контексте ИИ первые {len(selected)} из {len(incidents)} инцидентов с ближайшими сроками.")
+            response.limitations = list(dict.fromkeys(response.limitations))
+            self._cache[mode] = (key, time.monotonic() + (300 if response.status == "ready" else 15), response)
             return response
 
 

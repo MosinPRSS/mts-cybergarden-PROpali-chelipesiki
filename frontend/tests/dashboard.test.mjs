@@ -25,7 +25,7 @@ test("main board has three columns with unique cards; research remains a separat
   assert.deepEqual(visible.map((item) => item.id), ["critical", "research"]);
   assert.equal(new Set(visible.map((item) => item.id)).size, visible.length);
   assert.equal(getPrimaryGroup(rows[1]), "На координаторах");
-  assert.equal(NAVIGATION_ITEMS.some((item) => item.key === "analytics"), false);
+  assert.equal(NAVIGATION_ITEMS.some((item) => item.key === "analytics" && item.label === "Ассистент"), true);
 });
 
 test("research-only incidents do not inflate the main board count", () => {

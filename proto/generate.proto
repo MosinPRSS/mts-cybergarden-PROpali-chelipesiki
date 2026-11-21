@@ -15,13 +15,19 @@ service IncidentSummaryService {
 }
 
 message GenerateDashboardSummaryRequest {
-  // SQL-порядок: срочные критические, остальные критические, координаторы,
-  // высокий приоритет, исследование. Не более 20 записей.
+  // SQL-порядок: дедлайн, приоритет, влияние, дата регистрации и ID.
+  // UPCOMING: до 20 записей; OVERDUE: пакет до 5 записей.
   repeated IncidentSnapshot incidents = 1;
   google.protobuf.Timestamp as_of = 2;
   int32 total_candidates = 3;
   // Счётчики по всему набору, включая записи за пределами первых 20.
   map<string, int32> statistics = 4;
+  SummaryMode mode = 5;
+}
+
+enum SummaryMode {
+  SUMMARY_MODE_UPCOMING = 0;
+  SUMMARY_MODE_OVERDUE = 1;
 }
 
 message DashboardHighlight {
@@ -31,7 +37,7 @@ message DashboardHighlight {
 
 message GenerateDashboardSummaryResponse {
   string summary = 1;
-  // Первые три инцидента в порядке запроса, без пропусков и перестановок.
+  // UPCOMING: первые три; OVERDUE: все записи пакета, в порядке запроса.
   repeated DashboardHighlight highlights = 2;
   repeated string limitations = 3;
   google.protobuf.Timestamp generated_at = 4;

@@ -1,12 +1,16 @@
 import type { Incident } from "./incidents/types.ts";
 
+export type SummaryMode = "upcoming" | "overdue";
+
 export interface DashboardSummary {
-  status: "ready" | "fallback" | "empty";
+  status: "ready" | "partial" | "fallback" | "empty";
+  mode: SummaryMode;
   summary: string;
   highlights: {
     incident: Incident;
-    reason: "critical_urgent" | "critical" | "coordinator" | "high" | "research";
+    reason: "critical_urgent" | "deadline_soon" | "overdue";
     summary: string;
+    analyzed: boolean;
   }[];
   limitations: string[];
   total_candidates: number;
