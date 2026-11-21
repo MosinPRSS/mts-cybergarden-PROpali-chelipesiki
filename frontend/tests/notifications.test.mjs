@@ -7,7 +7,27 @@ import {
   loadNotifications,
   saveNotifications,
   MAX_NOTIFICATIONS_STORED,
+  incidentNotifications,
 } from "../src/lib/notifications.ts";
+
+test("a batch retains every critical, coordinator and resolution event", () => {
+  const row = (id, groups, status = "Assigned") => ({ id, groups, status, updated: "v2", service: "Продукт" });
+  const previous = new Map([["old", row("old", ["Критические"])]]);
+  const current = [row("both", ["Критические", "На координаторах"]),
+    row("second", ["Критические"]), row("old", [], "Resolved")];
+  const events = incidentNotifications(previous, current);
+  assert.deepEqual(events.map((item) => [item.incidentId, item.type]), [
+    ["both", "critical"], ["both", "assigned"], ["second", "critical"], ["old", "resolved"],
+  ]);
+  assert.equal(events[3].title, "Критический инцидент решён");
+  assert.equal(new Set(events.map((item) => item.id)).size, 4);
+  assert.deepEqual(incidentNotifications(new Map(current.map((item) => [item.id, item])), current), []);
+});
+
+test("the first incident after an empty snapshot is announced", () => {
+  const events = incidentNotifications(new Map(), [{ id: "first", service: "Продукт", updated: "v1", groups: ["Критические", "На координаторах"] }]);
+  assert.deepEqual(events.map((item) => item.type), ["critical", "assigned"]);
+});
 
 test("createNotification initializes correctly with defaults", () => {
   const notif = createNotification({

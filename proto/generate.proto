@@ -15,10 +15,13 @@ service IncidentSummaryService {
 }
 
 message GenerateDashboardSummaryRequest {
-  // SQL-порядок: срочные критические, остальные критические, координаторы.
+  // SQL-порядок: срочные критические, остальные критические, координаторы,
+  // высокий приоритет, исследование. Не более 20 записей.
   repeated IncidentSnapshot incidents = 1;
   google.protobuf.Timestamp as_of = 2;
   int32 total_candidates = 3;
+  // Счётчики по всему набору, включая записи за пределами первых 20.
+  map<string, int32> statistics = 4;
 }
 
 message DashboardHighlight {

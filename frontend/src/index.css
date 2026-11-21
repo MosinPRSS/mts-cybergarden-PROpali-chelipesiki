@@ -3382,3 +3382,14 @@ main {
 .operator b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-error { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; width: max-content; max-width: calc(100vw - 32px); padding: 14px 18px; border: 1px solid #e30611; border-radius: 10px; color: #fff; background: #42151e; font-size: 13px; display: flex; align-items: center; gap: 14px; }
 .session-error button { border: 0; background: none; color: inherit; font-size: 20px; }
+
+/* Compact facts on cards and on-demand AI context. */
+.card-details { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 8px; color: var(--muted); font-size: 11px; margin: 8px 0; }
+.ai-analysis > .secondary-button { margin-top: 12px; }
+.ai-analysis > small { display: block; margin-top: 10px; color: var(--muted); }
+.ai-related { display: grid; gap: 4px; margin: 12px 0; font-size: 12px; }
+.text-action { background: none; border: 0; padding: 0; color: var(--accent, #e53935); text-align: left; cursor: pointer; font: inherit; }
+.ai-limitations { color: var(--muted); font-size: 12px; }
+button:disabled { opacity: .55; cursor: wait; }
+
+.card-group-list { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 8px; }

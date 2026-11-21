@@ -26,6 +26,7 @@ class Setup(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     AUTH_COOKIE_SECURE: bool = False
     AI_GRPC_TARGET: str = "ai:50051"
+    ITSM_URL_TEMPLATE: str = ""
     AI_SUMMARY_TIMEOUT_SECONDS: float = Field(default=65, gt=0, le=120)
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
 

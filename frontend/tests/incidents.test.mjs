@@ -54,14 +54,13 @@ test("a critical active incident can belong to two attention groups", () => {
   assert.deepEqual(groups.getIncidentGroups(incident({ priorityId: 4, status: "Assigned", team: "КЦ ИТ Координаторы Массовых Инцидентов" })), ["Критические", "На координаторах"]);
 });
 
-test("critical incidents occupy only the critical column in either distribution mode", () => {
+test("each incident has one board column selected by group significance", () => {
   const critical = incident({ status: "Assigned", groups: ["Критические", "На координаторах"] });
   const high = incident({ status: "Assigned", groups: ["На координаторах", "Высокий приоритет"] });
-  for (const mode of ["multi", "significant"]) {
-    assert.deepEqual(groups.getIncidentBoardGroups(critical, mode), ["Критические"]);
-  }
-  assert.deepEqual(groups.getIncidentBoardGroups(high, "multi"), ["На координаторах", "Высокий приоритет"]);
-  assert.deepEqual(groups.getIncidentBoardGroups(high, "significant"), ["На координаторах"]);
+  assert.deepEqual(groups.getIncidentBoardGroups(critical), ["Критические"]);
+  assert.deepEqual(groups.getIncidentBoardGroups(high), ["На координаторах"]);
+  assert.deepEqual(groups.getIncidentBoardGroups(incident({ status: "Research", groups: ["Исследование ситуации", "На координаторах"] })), ["На координаторах"]);
+  assert.deepEqual(groups.getIncidentBoardGroups(incident({ groups: [] })), []);
   assert.deepEqual(groups.getIncidentGroups(critical), ["Критические", "На координаторах"]);
 });
 
@@ -143,12 +142,13 @@ test("isResolvedOlderThanDay detects resolved incidents older than 24h", () => {
   );
 });
 
-test("research has its own view even when also assigned to coordinators", async () => {
+test("research remains visible on the main board and coordinator view", async () => {
   const { matchesIncidentView } = await import("../src/lib/incidents.ts");
   const research = incident({ status: "Research", groups: ["На координаторах", "Исследование ситуации"] });
   assert.equal(matchesIncidentView(research, "research"), true);
-  assert.equal(matchesIncidentView(research, "all"), false);
-  assert.equal(matchesIncidentView(research, "team"), false);
+  assert.equal(matchesIncidentView(research, "all"), true);
+  assert.equal(matchesIncidentView(research, "team"), true);
+  assert.equal(groups.isResolvedOlderThanDay({ ...research, completionDate: "2020-01-01T00:00:00Z" }), false);
   const coordinator = incident({ status: "Assigned", groups: ["На координаторах"] });
   assert.equal(matchesIncidentView(coordinator, "team"), true);
   assert.equal(matchesIncidentView(coordinator, "all"), true);
@@ -157,7 +157,7 @@ test("research has its own view even when also assigned to coordinators", async 
   assert.equal(matchesIncidentView(incident({ groups: ["Исследование ситуации"] }), "research"), true);
 });
 
-test("main and team views count only unfinished incidents, with research kept separate", async () => {
+test("main and team views include research requiring coordinator attention", async () => {
   const { matchesIncidentView } = await import("../src/lib/incidents.ts");
   const rows = [
     incident({ status: "Assigned", is_active: true }),
@@ -167,8 +167,8 @@ test("main and team views count only unfinished incidents, with research kept se
     incident({ status: "Research", is_active: false, groups: ["Исследование ситуации", "На координаторах"] }),
     incident({ is_active: false }),
   ];
-  assert.equal(rows.filter((row) => matchesIncidentView(row, "all")).length, 2);
-  assert.equal(rows.filter((row) => matchesIncidentView(row, "team")).length, 1);
+  assert.equal(rows.filter((row) => matchesIncidentView(row, "all")).length, 3);
+  assert.equal(rows.filter((row) => matchesIncidentView(row, "team")).length, 2);
   assert.equal(rows.filter((row) => matchesIncidentView(row, "research")).length, 1);
 });
 

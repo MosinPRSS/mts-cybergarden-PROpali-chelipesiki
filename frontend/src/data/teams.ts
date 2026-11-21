@@ -1,4 +1,4 @@
-import type { Team } from "../types";
+import type { Team } from "../domain/teams/types.ts";
 
 export const TEAMS_DATA: Team[] = [
   {

@@ -31,6 +31,7 @@ services:
              uvicorn main:app --host 0.0.0.0 --port 8000"
 
   ai:
+    container_name: ai
     build:
       context: .
       dockerfile: ai/Dockerfile

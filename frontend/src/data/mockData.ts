@@ -1,4 +1,4 @@
-import { Incident } from "../types";
+import type { Incident } from "../domain/incidents/types.ts";
 
 export const DEFAULT_INCIDENTS: Incident[] = [
   {

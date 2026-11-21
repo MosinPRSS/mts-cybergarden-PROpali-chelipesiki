@@ -13,7 +13,10 @@ SYSTEM_PROMPT = """Ты помощник координатора инциден
 для главной страницы: что требует внимания сейчас, влияние и следующий шаг.
 incidents уже отсортированы сервером: сначала активные критические с истёкшим
 сроком или сроком менее 30 минут, затем остальные критические, затем активные
-на координаторах. Сроки идут по возрастанию, при равных сроках выше влияние.
+на координаторах (включая RESEARCH), затем высокий приоритет и исследование.
+RESEARCH — сервис уже восстановлен, идёт разбор причин.
+statistics — точные счётчики по всем четырём группам, записи могут пересекаться.
+Не суммируй группы как число уникальных инцидентов. Сроки идут по возрастанию, при равных сроках выше влияние.
 Шкалы priority_id и impact_id: 4 — наивысший, 3 — высокий, 2 — средний, 1 — низкий.
 Сохраняй этот порядок. В highlights включи строго первые min(3, N) записей.
 Для каждой кратко объясни проблему, почему она важна и что проверить/сделать.
@@ -35,26 +38,32 @@ limitations может быть пустым списком. Никаких до
 def validate_dashboard_request(request):
     if not request.HasField("as_of") or not request.incidents:
         raise ValueError("Expected as_of and at least one incident")
-    if request.total_candidates < len(request.incidents):
+    if request.total_candidates < len(request.incidents) or len(request.incidents) > 20:
         raise ValueError("Invalid candidate count")
     seen = set()
     for incident in request.incidents:
         single = pb.GenerateIncidentSummaryRequest(incident=incident, as_of=request.as_of)
         validate_request(single)
-        if incident.state_enum not in (pb.INCIDENT_STATE_ASSIGNED, pb.INCIDENT_STATE_WORK_IN_PROGRESS):
-            raise ValueError("Dashboard incidents must be active")
+        if incident.state_enum not in (pb.INCIDENT_STATE_ASSIGNED, pb.INCIDENT_STATE_WORK_IN_PROGRESS, pb.INCIDENT_STATE_RESEARCH):
+            raise ValueError("Dashboard incidents must need attention")
         if incident.id in seen:
             raise ValueError("Duplicate incident")
         seen.add(incident.id)
 
 
 def dashboard_messages(request):
+    payload = MessageToDict(request, preserving_proto_field_name=True,
+                            always_print_fields_with_no_presence=True)
+    # Compact context: one description per incident; no service flags or duplicate text.
+    fields = {"id", "header", "description", "state_enum", "submit_date", "deadline",
+              "completion_date", "assigned_group_name", "product_name", "service",
+              "priority_id", "impact_id", "solution"}
+    payload["incidents"] = [{key: (value[:1200] if isinstance(value, str) else value)
+                              for key, value in item.items() if key in fields}
+                             for item in payload["incidents"]]
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": json.dumps(MessageToDict(
-            request, preserving_proto_field_name=True,
-            always_print_fields_with_no_presence=True,
-        ), ensure_ascii=False)},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
 
 

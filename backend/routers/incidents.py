@@ -2,16 +2,17 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import insert
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
 from core.auth import get_current_session, require_operator
 from core.sse_manager import sse_manager
-from domain.incidents import IncidentSource, IncidentState
+from domain.incidents import IncidentState
 from models import Incident
+from services.incidents import import_incidents
 from schemas.incidents import ErrorResponse, IncidentAssignRequest, IncidentCreate, IncidentCreateResponse, IncidentResponse
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[Depends(get_current_session)])
@@ -25,24 +26,6 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
     description="Начальный снимок из PostgreSQL. Для последующих обновлений используется SSE-подписка.",
 )
 async def list_incidents(db: DatabaseSession):
-    # Очистка на уровне SQL решённых инцидентов с истёкшим сроком 3 дней
-    try:
-        await db.execute(text("SELECT delete_expired_resolved_incidents()"))
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        try:
-            await db.execute(
-                text(
-                    "DELETE FROM incidents "
-                    "WHERE (state_id IN (7, 10) OR state_enum IN ('Resolved', 'Closed')) "
-                    "AND COALESCE(completion_date, updated_at) < NOW() - INTERVAL '3 days'"
-                )
-            )
-            await db.commit()
-        except Exception:
-            await db.rollback()
-
     result = await db.scalars(select(Incident).order_by(Incident.submit_date.desc(), Incident.id))
     return [incident.to_dict() for incident in result.unique().all()]
 
@@ -168,29 +151,18 @@ async def get_incident_source(incident_id: str, db: DatabaseSession):
     ),
     responses={422: {"description": "Ошибка валидации — неверный формат поля"}},
 )
-async def create_incident(payload: IncidentCreate, db: DatabaseSession) -> IncidentCreateResponse:
-    raw = payload.model_dump(mode="json", by_alias=True)
-
-    # Перепаковываем через IncidentSource для валидации доменных инвариантов
-    # (согласованность stateId/stateEnum, диапазоны priorityId и т. д.)
-    source = IncidentSource.model_validate(raw)
-
-    # Проверяем, существует ли уже такой инцидент
-    existing = await db.get(Incident, source.id)
-    is_new = existing is None
-
-    now = datetime.now(timezone.utc)
-    values = {name: getattr(source, name) for name in IncidentSource.model_fields}
-    values["source_payload"] = deepcopy(raw)
-    values["updated_at"] = now
-
-    stmt = insert(Incident).values(**values)
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[Incident.id],
-        set_={k: getattr(stmt.excluded, k) for k in values if k != "id"},
-    )
-    await db.execute(stmt)
-    await db.commit()
+async def create_incident(payload: IncidentCreate, request: Request, db: DatabaseSession) -> IncidentCreateResponse:
+    # Keep the actual source object, including sentinel dates and extra attributes.
+    raw = await request.json()
+    try:
+        stats = await import_incidents(db, [raw])
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Incident id or sysId conflicts with an existing record") from None
+    is_new = bool(stats["incidents_created"])
+    if stats["incidents_unchanged"]:
+        return IncidentCreateResponse(id=payload.id, created=False, sseNotified=0)
 
     # Отправляем полный снимок всех инцидентов через SSE
     # (фронтенд ожидает полный массив и делает setIncidents(freshData))
@@ -200,4 +172,4 @@ async def create_incident(payload: IncidentCreate, db: DatabaseSession) -> Incid
     full_snapshot = [inc.to_dict() for inc in all_incidents.unique().all()]
     notified = await sse_manager.broadcast_all(full_snapshot)
 
-    return IncidentCreateResponse(id=source.id, created=is_new, sseNotified=notified)
+    return IncidentCreateResponse(id=payload.id, created=is_new, sseNotified=notified)

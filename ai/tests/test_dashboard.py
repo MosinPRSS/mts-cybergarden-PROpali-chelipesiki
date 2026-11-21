@@ -29,7 +29,7 @@ class DashboardContractTests(unittest.TestCase):
     def test_invalid_requests(self):
         for change in (lambda req: req.ClearField("as_of"), lambda req: req.ClearField("incidents"),
                        lambda req: setattr(req, "total_candidates", 0),
-                       lambda req: setattr(req.incidents[0], "state_enum", pb.INCIDENT_STATE_RESEARCH),
+                       lambda req: setattr(req.incidents[0], "state_enum", pb.INCIDENT_STATE_RESOLVED),
                        lambda req: req.incidents.add().CopyFrom(req.incidents[0])):
             request = copy.deepcopy(self.request)
             change(request)

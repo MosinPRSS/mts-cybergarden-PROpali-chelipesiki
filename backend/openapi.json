@@ -73,6 +73,53 @@
         ]
       }
     },
+    "/api/incidents/{incident_id}/summary": {
+      "get": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "ИИ-анализ инцидента с похожими случаями",
+        "operationId": "incident_summary_api_incidents__incident_id__summary_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/incidents": {
       "get": {
         "tags": [
@@ -543,6 +590,13 @@
               }
             ],
             "title": "Generated At"
+          },
+          "statistics": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Statistics"
           }
         },
         "type": "object",
@@ -580,7 +634,9 @@
             "enum": [
               "critical_urgent",
               "critical",
-              "coordinator"
+              "coordinator",
+              "high",
+              "research"
             ],
             "title": "Reason"
           },
@@ -669,27 +725,23 @@
         "properties": {
           "sysId": {
             "type": "string",
-            "title": "Sysid",
-            "description": "Уникальный системный идентификатор записи в ITSM"
+            "title": "Sysid"
           },
           "id": {
             "type": "string",
-            "title": "Id",
-            "description": "Номер инцидента, например INC000012345678"
+            "title": "Id"
           },
           "state": {
             "type": "string",
-            "title": "State",
-            "description": "Человекочитаемое состояние на языке источника"
+            "title": "State"
           },
           "stateEnum": {
-            "$ref": "#/components/schemas/IncidentState",
-            "description": "Нормализованное состояние"
+            "$ref": "#/components/schemas/IncidentState"
           },
           "stateId": {
             "type": "integer",
             "title": "Stateid",
-            "description": "Код состояния: 0 Assigned, 2 WorkInProgress, 7 Resolved, 10 Closed, 20 Research"
+            "description": "Коды реальной выгрузки: 0 Assigned, 2 WorkInProgress, 7 Resolved, 10 Closed, 20 Research. В описательном справочнике 7/10 перепутаны, 20 пропущен."
           },
           "stateReason": {
             "anyOf": [
@@ -704,14 +756,12 @@
           },
           "stateReasonId": {
             "type": "string",
-            "title": "Statereasonid",
-            "default": "1"
+            "title": "Statereasonid"
           },
           "submitDate": {
             "type": "string",
             "format": "date-time",
-            "title": "Submitdate",
-            "description": "Время регистрации инцидента (ISO 8601 с TZ)"
+            "title": "Submitdate"
           },
           "deadline": {
             "anyOf": [
@@ -723,7 +773,8 @@
                 "type": "null"
               }
             ],
-            "title": "Deadline"
+            "title": "Deadline",
+            "description": "Абсолютный срок решения с часовым поясом; null допустим"
           },
           "completionDate": {
             "anyOf": [
@@ -751,73 +802,59 @@
           },
           "header": {
             "type": "string",
-            "title": "Header",
-            "description": "Заголовок инцидента"
+            "title": "Header"
           },
           "description": {
             "type": "string",
-            "title": "Description",
-            "description": "Полное описание"
+            "title": "Description"
           },
           "shortDescription": {
             "type": "string",
-            "title": "Shortdescription",
-            "description": "Краткое описание"
+            "title": "Shortdescription"
           },
           "assignedGroupName": {
             "type": "string",
-            "title": "Assignedgroupname",
-            "description": "Команда-исполнитель"
+            "title": "Assignedgroupname"
           },
           "assignedEmployee": {
             "type": "string",
-            "title": "Assignedemployee",
-            "description": "ФИО ответственного"
+            "title": "Assignedemployee"
           },
           "assignedEmployeeLogin": {
             "type": "string",
-            "title": "Assignedemployeelogin",
-            "description": "Логин ответственного"
+            "title": "Assignedemployeelogin"
           },
           "initiatorName": {
             "type": "string",
-            "title": "Initiatorname",
-            "description": "ФИО инициатора"
+            "title": "Initiatorname"
           },
           "initiatorLogin": {
             "type": "string",
-            "title": "Initiatorlogin",
-            "description": "Логин инициатора"
+            "title": "Initiatorlogin"
           },
           "isEffect": {
             "type": "boolean",
-            "title": "Iseffect",
-            "default": false
+            "title": "Iseffect"
           },
           "isReason": {
             "type": "boolean",
-            "title": "Isreason",
-            "default": false
+            "title": "Isreason"
           },
           "isDouble": {
             "type": "boolean",
-            "title": "Isdouble",
-            "default": false
+            "title": "Isdouble"
           },
           "isMaster": {
             "type": "boolean",
-            "title": "Ismaster",
-            "default": false
+            "title": "Ismaster"
           },
           "incType": {
             "type": "string",
-            "title": "Inctype",
-            "default": "МИ"
+            "title": "Inctype"
           },
           "serviceTypeId": {
             "type": "integer",
-            "title": "Servicetypeid",
-            "description": "10 | 20 | 30"
+            "title": "Servicetypeid"
           },
           "serviceType": {
             "type": "string",
@@ -826,7 +863,7 @@
           "priorityId": {
             "type": "integer",
             "title": "Priorityid",
-            "description": "1 Низкий, 2 Средний, 3 Высокий, 4 Наивысший"
+            "description": "1 Низкий, 2 Средний, 3 Высокий, 4 Наивысший; для группы критических принят код 4"
           },
           "priority": {
             "type": "string",
@@ -834,23 +871,19 @@
           },
           "urgencyId": {
             "type": "integer",
-            "title": "Urgencyid",
-            "default": 2
+            "title": "Urgencyid"
           },
           "urgency": {
             "type": "string",
-            "title": "Urgency",
-            "default": "Средняя"
+            "title": "Urgency"
           },
           "impactId": {
             "type": "integer",
-            "title": "Impactid",
-            "default": 2
+            "title": "Impactid"
           },
           "impact": {
             "type": "string",
-            "title": "Impact",
-            "default": "Средний"
+            "title": "Impact"
           },
           "waitingExitDate": {
             "anyOf": [
@@ -866,23 +899,19 @@
           },
           "isRootIncident": {
             "type": "boolean",
-            "title": "Isrootincident",
-            "default": false
+            "title": "Isrootincident"
           },
           "productName": {
             "type": "string",
-            "title": "Productname",
-            "default": ""
+            "title": "Productname"
           },
           "productId": {
             "type": "string",
-            "title": "Productid",
-            "default": ""
+            "title": "Productid"
           },
           "productMasterId": {
             "type": "string",
-            "title": "Productmasterid",
-            "default": ""
+            "title": "Productmasterid"
           },
           "productUrl": {
             "anyOf": [
@@ -897,8 +926,7 @@
           },
           "service": {
             "type": "string",
-            "title": "Service",
-            "description": "Наименование затронутого сервиса"
+            "title": "Service"
           },
           "serviceId": {
             "anyOf": [
@@ -913,8 +941,7 @@
           },
           "scenarioName": {
             "type": "string",
-            "title": "Scenarioname",
-            "default": ""
+            "title": "Scenarioname"
           },
           "isNeedUp": {
             "anyOf": [
@@ -951,15 +978,14 @@
           },
           "receivingChannel": {
             "type": "string",
-            "title": "Receivingchannel",
-            "default": "Автоматический"
+            "title": "Receivingchannel"
           },
           "solution": {
             "type": "string",
-            "title": "Solution",
-            "default": ""
+            "title": "Solution"
           }
         },
+        "additionalProperties": true,
         "type": "object",
         "required": [
           "sysId",
@@ -967,6 +993,7 @@
           "state",
           "stateEnum",
           "stateId",
+          "stateReasonId",
           "submitDate",
           "header",
           "description",
@@ -976,14 +1003,30 @@
           "assignedEmployeeLogin",
           "initiatorName",
           "initiatorLogin",
+          "isEffect",
+          "isReason",
+          "isDouble",
+          "isMaster",
+          "incType",
           "serviceTypeId",
           "serviceType",
           "priorityId",
           "priority",
-          "service"
+          "urgencyId",
+          "urgency",
+          "impactId",
+          "impact",
+          "isRootIncident",
+          "productName",
+          "productId",
+          "productMasterId",
+          "service",
+          "scenarioName",
+          "receivingChannel",
+          "solution"
         ],
         "title": "IncidentCreate",
-        "description": "Payload для создания нового инцидента через POST /api/incidents.\n\nСтруктура полностью соответствует формату ITSM-экспорта (IncidentSource),\nчтобы генератор и внешние системы могли отправлять одинаковые тела запросов."
+        "description": "The same validation and normalization as the ITSM file importer."
       },
       "IncidentCreateResponse": {
         "properties": {
@@ -1345,6 +1388,18 @@
             "title": "Ai",
             "description": "Пустая строка, пока реальный ИИ-анализ отсутствует"
           },
+          "itsm_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Itsm Url",
+            "description": "Адрес записи по настроенному ITSM_URL_TEMPLATE; null, пока адрес ITSM неизвестен"
+          },
           "tags": {
             "items": {
               "type": "string"
@@ -1443,6 +1498,52 @@
         ],
         "title": "IncidentState"
       },
+      "IncidentSummary": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "related_incidents_used": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedSummary"
+            },
+            "type": "array",
+            "title": "Related Incidents Used"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "incident_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Incident Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "summary",
+          "related_incidents_used",
+          "limitations",
+          "generated_at",
+          "incident_updated_at"
+        ],
+        "title": "IncidentSummary"
+      },
       "LoginRequest": {
         "properties": {
           "login": {
@@ -1466,6 +1567,24 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "RelatedSummary": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "contribution": {
+            "type": "string",
+            "title": "Contribution"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "contribution"
+        ],
+        "title": "RelatedSummary"
       },
       "UserResponse": {
         "properties": {

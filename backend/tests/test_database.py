@@ -25,6 +25,75 @@ from tests.helpers import ASGIConnection, authorize_test_user
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "Run python -m scripts.test_database for PostgreSQL tests")
 class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
+    async def test_original_post_updates_groups_broadcasts_and_preserves_raw_payload(self):
+        from core.sse_manager import sse_manager
+        raw = copy.deepcopy(self.records[0])
+        raw["futureField"] = {"keep": True}
+        async with sse_manager.subscribe() as subscription:
+            status, _, created = await self.auth_request("/api/incidents", method="POST", data=raw)
+            self.assertEqual(status, 201)
+            self.assertTrue(created["created"])
+            self.assertEqual(created["sseNotified"], 1)
+            snapshot = json.loads((await anext(subscription.events())).raw_data)
+            self.assertEqual(snapshot[0]["groups"], ["На координаторах"])
+            status, _, repeated = await self.auth_request("/api/incidents", method="POST", data=raw)
+            self.assertEqual(status, 201)
+            self.assertFalse(repeated["created"])
+            self.assertEqual(repeated["sseNotified"], 0)
+            self.assertTrue(subscription.queue.empty())
+            raw.update(priorityId=4, priority="Наивысший")
+            await self.auth_request("/api/incidents", method="POST", data=raw)
+            snapshot = json.loads((await anext(subscription.events())).raw_data)
+            self.assertEqual(snapshot[0]["groups"], ["Критические", "На координаторах"])
+            status, _, original = await self.auth_request(f'/api/incidents/{raw["id"]}/source')
+            self.assertEqual(original, raw)
+            status, _, assigned = await self.auth_request(f'/api/incidents/{raw["id"]}/assign', method="POST", data={"team": "Исполнители"})
+            self.assertEqual(status, 200)
+            self.assertEqual(assigned["groups"], ["Критические"])
+            status, _, resolved = await self.auth_request(f'/api/incidents/{raw["id"]}/resolve', method="POST")
+            self.assertEqual(status, 200)
+            self.assertEqual(resolved["groups"], [])
+            self.assertEqual(resolved["status"], "Resolved")
+
+    async def test_single_summary_api_rejects_stale_results_and_handles_provider_failure(self):
+        from unittest.mock import AsyncMock, patch
+        import grpc
+        from ai_proto import generate_pb2 as pb
+        from services.incident_summary import IncidentSummaryService
+
+        await self.seed()
+        target_id = self.records[0]["id"]
+        changed_context = None
+
+        async def generate(request):
+            nonlocal changed_context
+            self.assertLessEqual(len(request.related_incidents), 5)
+            response = pb.GenerateIncidentSummaryResponse(incident_id=target_id, summary="Проверьте восстановление",
+                incident_updated_at=request.incident.updated_at)
+            response.generated_at.FromDatetime(datetime.now(timezone.utc))
+            if changed_context is not None:
+                async with self.sessions.begin() as session:
+                    incident = await session.get(Incident, changed_context)
+                    incident.header = "Обновлён во время анализа"
+                    incident.updated_at = datetime.now(timezone.utc)
+            return response
+
+        with patch("services.incident_summary.generate_incident_summary", new=AsyncMock(side_effect=generate)):
+            with patch("routers.summary.incident_summary_service", new=IncidentSummaryService()):
+                status, _, result = await self.auth_request(f"/api/incidents/{target_id}/summary")
+            self.assertEqual(status, 200)
+            self.assertEqual(result["incident_id"], target_id)
+            changed_context = target_id
+            with patch("routers.summary.incident_summary_service", new=IncidentSummaryService()):
+                status, _, _ = await self.auth_request(f"/api/incidents/{target_id}/summary")
+            self.assertEqual(status, 409)
+        with patch("services.incident_summary.generate_incident_summary", new=AsyncMock(side_effect=grpc.RpcError)):
+            with patch("routers.summary.incident_summary_service", new=IncidentSummaryService()):
+                status, _, _ = await self.auth_request(f"/api/incidents/{target_id}/summary")
+            self.assertEqual(status, 503)
+        status, _, _ = await self.auth_request("/api/incidents/missing/summary")
+        self.assertEqual(status, 404)
+
     async def test_dashboard_summary_uses_sql_priority_and_live_api(self):
         from unittest.mock import AsyncMock, patch
         from ai_proto import generate_pb2 as pb
@@ -75,12 +144,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         await self.migrate("upgrade", "head")
         self.addAsyncCleanup(self.migrate, "downgrade", "base")
         self.records = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-        cutoff = datetime.now(timezone.utc) - timedelta(days=3)
-        # Revision 0003 intentionally removes old resolved fixture records.
-        self.retained_records = [row for row in self.records if not (
-            row["stateEnum"] in ("Resolved", "Closed") and row.get("completionDate")
-            and datetime.fromisoformat(row["completionDate"].replace("Z", "+00:00")) < cutoff
-        )]
+        self.retained_records = self.records
 
         async def test_db():
             async with self.sessions() as session:
@@ -116,7 +180,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             )
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
         self.assertEqual(differences, [])
-        self.assertEqual(revision, "0005")
+        self.assertEqual(revision, "0006")
 
     async def test_import_preserves_all_original_fields_without_creating_accounts(self):
         self.assertEqual(await self.seed(), {"incidents_created": 44, "incidents_updated": 0, "incidents_unchanged": 0})

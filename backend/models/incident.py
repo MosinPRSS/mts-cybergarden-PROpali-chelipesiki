@@ -2,6 +2,9 @@
 
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote, urlsplit
+
+from config import settings
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum as SQLEnum, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -92,6 +95,8 @@ class Incident(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     def to_dict(self, *, now: datetime | None = None) -> dict:
+        itsm_url = settings.ITSM_URL_TEMPLATE.replace("{id}", quote(self.id, safe="")).replace("{sysId}", quote(self.sys_id, safe=""))
+        parsed_url = urlsplit(itsm_url)
         source = IncidentSource.model_validate({
             name: getattr(self, name) for name in IncidentSource.model_fields
         })
@@ -112,6 +117,7 @@ class Incident(Base):
             "assignee": self.assigned_employee,
             "affected": self.impact,
             "ai": self.ai_recommendation or "",
+            "itsm_url": itsm_url if parsed_url.scheme in {"http", "https"} and parsed_url.netloc else None,
             "tags": self.tags or [],
             "created": self.submit_date.isoformat(),
             "updated": self.updated_at.isoformat(),

@@ -56,10 +56,26 @@ class PrioritySQLTests(unittest.TestCase):
                     deadline=(NOW + timedelta(minutes=minutes)).replace(tzinfo=None) if minutes is not None else None,
                     submitted=(NOW - timedelta(hours=1)).replace(tzinfo=None)))
             ids = db.scalars(priority_query(NOW).with_only_columns(Incident.id)).all()
-        self.assertEqual(ids, ["overdue", "soon-high", "soon-low", "boundary", "later", "unknown", "coordinator", "coordinator-later"])
+        self.assertEqual(ids, ["overdue", "soon-high", "soon-low", "boundary", "later", "unknown", "research", "coordinator", "coordinator-later", "other"])
 
 
 class DashboardServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_context_is_bounded_but_statistics_cover_all_candidates(self):
+        rows = [make_incident(f"INC-{i}") for i in range(25)]
+        async def generate(request):
+            self.assertEqual(len(request.incidents), 20)
+            self.assertEqual(request.total_candidates, 25)
+            self.assertEqual(request.statistics["critical"], 25)
+            response = pb.GenerateDashboardSummaryResponse(summary="Обзор", highlights=[
+                pb.DashboardHighlight(incident_id=item.id, summary="Пояснение") for item in request.incidents[:3]])
+            response.generated_at.FromDatetime(NOW)
+            return response
+        with patch("services.dashboard_summary.generate_overview", new=AsyncMock(side_effect=generate)):
+            result = await DashboardSummaryService().summarize(rows, NOW)
+        self.assertEqual(result.analyzed_count, 20)
+        self.assertEqual(result.total_candidates, 25)
+        self.assertTrue(result.limitations)
+
     async def test_empty_does_not_call_provider(self):
         with patch("services.dashboard_summary.generate_overview", new_callable=AsyncMock) as generate:
             result = await DashboardSummaryService().summarize([], NOW)

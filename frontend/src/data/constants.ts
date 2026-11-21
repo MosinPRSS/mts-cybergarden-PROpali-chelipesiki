@@ -1,11 +1,6 @@
-import type { IconName } from "../types";
+import type { IconName } from "../presentation/models.ts";
 
-export const SIGNIFICANCE_ORDER = [
-  "Критические",
-  "На координаторах",
-  "Высокий приоритет",
-  "Исследование ситуации",
-];
+export { SIGNIFICANCE_ORDER } from "../domain/incidents/groups.ts";
 
 export const PRESET_GROUPS = [
   "ИТ-Инфраструктура",
@@ -18,7 +13,6 @@ export const PRESET_GROUPS = [
 
 export const NAVIGATION_ITEMS: Array<{ key: string; icon: IconName; label: string }> = [
   { key: "board", icon: "grid", label: "Инциденты" },
-  { key: "analytics", icon: "smart_toy", label: "Ассистент" },
   { key: "teams", icon: "users", label: "Команды" },
-  //{ key: "history", icon: "history", label: "История" },
+  { key: "history", icon: "history", label: "История" },
 ];
