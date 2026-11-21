@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   Incident,
   Column,
   DistributionMode,
+  IncidentView,
   AlertBannerState,
   LiveStatusState,
   NotificationItem,
@@ -17,6 +19,7 @@ import {
   resolveIncident,
   assignIncident,
   normalizeIncident,
+  matchesIncidentView,
   remainingSla,
   isIncidentActive,
   isIncidentResolved,
@@ -41,7 +44,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [secondsPassed, setSecondsPassed] = useState(0);
   const [activeNav, setActiveNav] = useState("board");
-  const [teamOnly, setTeamOnly] = useState(false);
+  const [incidentView, setIncidentView] = useState<IncidentView>("all");
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [liveStatus, setLiveStatus] = useState<LiveStatusState | null>(null);
   const [alertBanner, setAlertBanner] = useState<AlertBannerState | null>(null);
@@ -404,10 +407,10 @@ export function App() {
         const matches = `${incident.id} ${incident.service} ${incident.area} ${incident.summary} ${getIncidentGroups(incident).join(" ")}`
           .toLowerCase()
           .includes(query.toLowerCase());
-        const belongs = !teamOnly || getIncidentGroups(incident).includes("На координаторах");
+        const belongs = matchesIncidentView(incident, incidentView);
         return matches && belongs;
       }),
-    [incidents, query, teamOnly]
+    [incidents, query, incidentView]
   );
 
   // Dynamic custom groups
@@ -423,7 +426,7 @@ export function App() {
     return Array.from(custom);
   }, [incidents]);
 
-  // All columns: 4 main columns in order of significance + dynamic custom groups
+  // Research has its own view; the main board keeps the attention groups.
   const allColumns: Column[] = useMemo(() => {
     const base: Column[] = [
       {
@@ -454,7 +457,7 @@ export function App() {
         key: "Исследование ситуации",
         id: "resolved",
         title: "Исследование ситуации",
-        hint: "4-й приоритет · Разбор причин",
+        hint: "Разбор причин",
         badgeClass: "resolved",
         priorityRank: 4,
       },
@@ -470,8 +473,9 @@ export function App() {
       isCustom: true,
     }));
 
-    return [...base, ...custom];
-  }, [customGroups]);
+    if (incidentView === "research") return base.filter((column) => column.key === "Исследование ситуации");
+    return [...base.filter((column) => column.key !== "Исследование ситуации"), ...custom];
+  }, [customGroups, incidentView]);
 
   // KPI Overview metrics
   const criticalCount = useMemo(
@@ -508,7 +512,7 @@ export function App() {
     () =>
       incidents.filter(
         (i) =>
-          getIncidentGroups(i).includes("На координаторах")
+          matchesIncidentView(i, "team")
       ).length,
     [incidents]
   );
@@ -561,24 +565,23 @@ export function App() {
 
               {/* TOOLBAR & MULTI-GROUP TOGGLE */}
               <Toolbar
-                totalCount={incidents.length}
+                totalCount={incidents.filter((item) => matchesIncidentView(item, "all")).length}
+                researchCount={incidents.filter((item) => matchesIncidentView(item, "research")).length}
                 myTeamCount={myTeamCount}
-                teamOnly={teamOnly}
-                onToggleTeamOnly={setTeamOnly}
+                incidentView={incidentView}
+                onSetIncidentView={setIncidentView}
                 distributionMode={distributionMode}
                 onSetDistributionMode={setDistributionMode}
-                columnsCount={allColumns.length}
               />
 
               {/* BOARD COLUMNS */}
               <div
-                className="board"
-                style={{
-                  gridTemplateColumns: `repeat(${allColumns.length}, minmax(260px, 1fr))`,
-                }}
+                className={`board ${incidentView === "research" ? "board-research" : ""}`}
+                style={{ "--board-columns": allColumns.length } as CSSProperties}
               >
                 {allColumns.map((column) => {
                   const items = filtered.filter((incident) => {
+                    if (incidentView === "research") return true;
                     if (distributionMode === "significant") {
                       return getPrimaryGroup(incident) === column.key;
                     } else {

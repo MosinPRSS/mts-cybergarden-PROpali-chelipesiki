@@ -1,0 +1,104 @@
+# gRPC-сервис аналитики
+
+Python-сервер регистрирует `ai.v1.IncidentSummaryService` на порту `50051`.
+`GenerateIncidentSummary` проверяет запрос, вызывает DeepSeek Chat Completions
+и возвращает одну сводку основного инцидента с использованными ссылками на контекст.
+Связанные записи отбирает и передаёт backend; сервис не подключается к БД.
+
+HTTP выполняется через `requests` в `asyncio.to_thread`, gRPC-сервер использует
+`grpc.aio`. OpenAI SDK не нужен. Одновременно работают до четырёх HTTP-потоков,
+а число активных RPC ограничено восемью.
+
+## Настройки
+
+Для Compose добавьте ключ в корневой `.env`; образ его не содержит:
+
+```dotenv
+DEEPSEEK_API_KEY=your-deepseek-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_TIMEOUT_SECONDS=60
+DEEPSEEK_MAX_TOKENS=2048
+```
+
+`DEEPSEEK_BASE_URL` может включать `/v1`; сервис дописывает `/chat/completions`.
+Без ключа сервер запускается, но RPC возвращает `FAILED_PRECONDITION`.
+Данные отправляются на настроенный адрес только при валидном RPC и наличии ключа.
+
+Используется JSON mode, thinking отключён для короткой сводки. Модель получает
+поля основного инцидента, связанный контекст и время анализа. Инструкции в текстах
+инцидентов должны рассматриваться как данные. Ответ проверяется: ID основного
+инцидента должен совпадать, ссылки допустимы только на переданный контекст,
+повторы и пустой текст отклоняются. Даты ответа и версия снимка проставляются сервером.
+Эти проверки не гарантируют фактическую точность свободного текста модели.
+
+Формат HTTP-запроса и JSON mode сверены с
+[DeepSeek API](https://api-docs.deepseek.com/guides/json_mode/),
+модель по умолчанию — с [перечнем моделей](https://api-docs.deepseek.com/quick_start/pricing/).
+
+## Docker Compose
+
+Из корня проекта:
+
+```sh
+docker compose up -d --build ai
+docker compose ps ai
+docker compose logs ai
+```
+
+Из backend-контейнера сервис доступен по адресу `ai:50051`.
+Порт доступен внутри Compose, на хост не опубликован.
+Python-интерфейсы генерируются из `proto/generate.proto` при сборке образа.
+Healthcheck проверяет доступность gRPC-транспорта, а не готовность модели.
+При SIGTERM/SIGINT gRPC даёт активным вызовам 5 секунд на завершение.
+Уже запущенный `requests` нельзя принудительно отменить через asyncio:
+HTTP-поток может продолжать работу до сетевого таймаута. В Compose предусмотрено
+75 секунд на остановку контейнера. При увеличении HTTP-таймаута увеличьте и этот срок.
+Таймаут RPC ограничивает время ожидания клиента; connect timeout — до 5 секунд,
+read timeout — до `DEEPSEEK_TIMEOUT_SECONDS`. Автоматических повторов платного
+запроса нет. Ключи, тексты инцидентов и тела ошибок провайдера не логируются.
+
+## Локальный запуск
+
+```sh
+python3 -m venv ai/venv
+ai/venv/bin/python -m pip install -r ai/requirements.txt
+ai/venv/bin/python -m grpc_tools.protoc -I proto \
+  --python_out=ai --grpc_python_out=ai proto/generate.proto
+export DEEPSEEK_API_KEY=your-deepseek-key
+ai/venv/bin/python ai/main.py
+```
+
+Порт настраивается переменной `GRPC_PORT` (по умолчанию `50051`).
+Проверка работающего сервера:
+
+```sh
+ai/venv/bin/python ai/healthcheck.py
+```
+
+При локальном запуске настройки читаются из переменных процесса; `.env`
+автоматически обрабатывает только Docker Compose.
+
+## Ошибки RPC
+
+| Код | Причина |
+| --- | --- |
+| INVALID_ARGUMENT | Некорректный снимок, даты или связанный контекст |
+| FAILED_PRECONDITION | Не задан ключ, ошибка авторизации, адреса или параметров API |
+| RESOURCE_EXHAUSTED | Нет баланса, превышен лимит запросов или выходных токенов |
+| DEADLINE_EXCEEDED | Истёк таймаут HTTP или RPC |
+| UNAVAILABLE | Сетевая ошибка или сбой DeepSeek |
+| DATA_LOSS | Пустой, незавершённый или некорректный ответ, чужой ID или выдуманные ссылки |
+
+## Проверки
+
+```sh
+ai/venv/bin/python -B -m unittest discover -s ai/tests -v
+```
+
+Тесты сами генерируют Python-интерфейсы во временную папку. Ключ не нужен,
+реальные запросы в DeepSeek не отправляются. Проверяются контракт, ошибки API,
+таймауты и отсутствие блокировки event loop при синхронном HTTP.
+
+`requests` остаётся синхронной библиотекой; особенности описаны в
+[её документации](https://requests.readthedocs.io/en/latest/user/advanced/#blocking-or-non-blocking).

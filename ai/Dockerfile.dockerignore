@@ -1,0 +1,9 @@
+**
+!ai/
+!ai/requirements.txt
+!ai/main.py
+!ai/healthcheck.py
+!ai/deepseek.py
+!ai/summary.py
+!proto/
+!proto/generate.proto

@@ -1,71 +1,71 @@
-import { DistributionMode } from "../../types";
-import { Icon } from "../common/Icon";
+import { DistributionMode, IncidentView } from "../../types";
 
 interface ToolbarProps {
   totalCount: number;
+  researchCount: number;
   myTeamCount: number;
-  teamOnly: boolean;
-  onToggleTeamOnly: (val: boolean) => void;
+  incidentView: IncidentView;
+  onSetIncidentView: (view: IncidentView) => void;
   distributionMode: DistributionMode;
   onSetDistributionMode: (mode: DistributionMode) => void;
-  columnsCount: number;
 }
 
 export function Toolbar({
   totalCount,
+  researchCount,
   myTeamCount,
-  teamOnly,
-  onToggleTeamOnly,
+  incidentView,
+  onSetIncidentView,
   distributionMode,
   onSetDistributionMode,
-  columnsCount,
 }: ToolbarProps) {
   return (
     <div className="toolbar">
-      <div className="view-tabs">
+      <div className="view-tabs" aria-label="Представление инцидентов">
         <button
-          className={!teamOnly ? "active" : ""}
-          onClick={() => onToggleTeamOnly(false)}
+          className={incidentView === "all" ? "active" : ""}
+          aria-pressed={incidentView === "all"}
+          onClick={() => onSetIncidentView("all")}
         >
           Все инциденты <span>{totalCount}</span>
         </button>
         <button
-          className={teamOnly ? "active" : ""}
-          onClick={() => onToggleTeamOnly(true)}
+          className={incidentView === "research" ? "active" : ""}
+          aria-pressed={incidentView === "research"}
+          onClick={() => onSetIncidentView("research")}
+        >
+          Исследование ситуации <span>{researchCount}</span>
+        </button>
+        <button
+          className={incidentView === "team" ? "active" : ""}
+          aria-pressed={incidentView === "team"}
+          onClick={() => onSetIncidentView("team")}
         >
           Моя команда <span>{myTeamCount}</span>
         </button>
       </div>
 
-      <div className="mode-toggle">
-        <span className="mode-label">Раскладка групп:</span>
-        <div className="mode-buttons">
-          <button
-            className={distributionMode === "significant" ? "active" : ""}
-            onClick={() => onSetDistributionMode("significant")}
-            title="Карточка раскидывается по самой значимой группе (Критические > На координаторах > Высокий > Исследование)"
-          >
-            По высшей значимости
-          </button>
-          <button
-            className={distributionMode === "multi" ? "active" : ""}
-            onClick={() => onSetDistributionMode("multi")}
-            title="Карточка отображается во всех группах, в которые она входит (регламент МТС)"
-          >
-            Во всех группах (мульти)
-          </button>
+      {incidentView !== "research" && (
+        <div className="mode-toggle">
+          <span className="mode-label">Раскладка групп:</span>
+          <div className="mode-buttons">
+            <button
+              className={distributionMode === "significant" ? "active" : ""}
+              onClick={() => onSetDistributionMode("significant")}
+              title="Карточка отображается в самой значимой группе: Критические > На координаторах > Высокий приоритет"
+            >
+              По высшей значимости
+            </button>
+            <button
+              className={distributionMode === "multi" ? "active" : ""}
+              onClick={() => onSetDistributionMode("multi")}
+              title="Карточка отображается во всех группах, в которые она входит (регламент МТС)"
+            >
+              Во всех группах (мульти)
+            </button>
+          </div>
         </div>
-      </div>
-
-      {/*<div className="filters">
-        <button>
-          <Icon name="filter" size={16} />
-          Фильтры <span>{columnsCount}</span>
-        </button>
-        <button>
-          За 24 часа <span className="down">⌄</span>
-        </button>
-      </div>*/}
+      )}
     </div>
   );
 }

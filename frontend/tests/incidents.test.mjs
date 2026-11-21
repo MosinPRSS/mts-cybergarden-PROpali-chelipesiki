@@ -131,3 +131,58 @@ test("isResolvedOlderThanDay detects resolved incidents older than 24h", () => {
     true
   );
 });
+
+test("research has its own view even when also assigned to coordinators", async () => {
+  const { matchesIncidentView } = await import("../src/lib/incidents.ts");
+  const research = incident({ status: "Research", groups: ["На координаторах", "Исследование ситуации"] });
+  assert.equal(matchesIncidentView(research, "research"), true);
+  assert.equal(matchesIncidentView(research, "all"), false);
+  assert.equal(matchesIncidentView(research, "team"), false);
+  const coordinator = incident({ status: "Assigned", groups: ["На координаторах"] });
+  assert.equal(matchesIncidentView(coordinator, "team"), true);
+  assert.equal(matchesIncidentView(coordinator, "all"), true);
+  assert.equal(matchesIncidentView(coordinator, "research"), false);
+  assert.equal(matchesIncidentView(incident(), "team"), false);
+  assert.equal(matchesIncidentView(incident({ groups: ["Исследование ситуации"] }), "research"), true);
+});
+
+test("expired and imminent deadlines lead, then priority and oldest first, resolved last", async () => {
+  const { sortIncidentsByUrgency } = await import("../src/lib/incidents.ts");
+  const rows = [
+    incident({ id: "resolved", status: "Resolved", priorityId: 4, sla: -99999 }),
+    incident({ id: "critical-new", priorityId: 4, sla: 3600, created: "2026-11-21T00:00:00Z" }),
+    incident({ id: "critical-old", priorityId: 4, sla: 7200, created: "2026-11-19T00:00:00Z" }),
+    incident({ id: "low", priorityId: 1, sla: 3600, created: "2026-11-18T00:00:00Z" }),
+    incident({ id: "imminent", priorityId: 1, sla: 60 }),
+    incident({ id: "expired", priorityId: 1, sla: 0 }),
+    incident({ id: "overdue", priorityId: 4, sla: -60 }),
+    incident({ id: "research", status: "Research", priorityId: 4, sla: -99999 }),
+  ];
+  const originalOrder = rows.map((row) => row.id);
+  assert.deepEqual(sortIncidentsByUrgency(rows, (row) => row.sla).map((row) => row.id), [
+    "overdue", "expired", "imminent", "critical-old", "critical-new", "low", "research", "resolved",
+  ]);
+  assert.deepEqual(rows.map((row) => row.id), originalOrder);
+});
+
+test("ordering handles missing dates, missing deadlines and localized priorities deterministically", async () => {
+  const { sortIncidentsByUrgency } = await import("../src/lib/incidents.ts");
+  const rows = [
+    incident({ id: "B", priority: "Высокий", created: "invalid", sla: NaN }),
+    incident({ id: "A", priority: "High", sla: null }),
+    incident({ id: "dated", priority: "High", created_at: "2026-11-20T00:00:00Z", created: "invalid" }),
+    incident({ id: "critical", priority: "Наивысший" }),
+  ];
+  assert.deepEqual(sortIncidentsByUrgency(rows, (row) => row.sla).map((row) => row.id), ["critical", "dated", "A", "B"]);
+});
+
+test("ordering follows the live deadline when an incident becomes urgent", async () => {
+  const { sortIncidentsByUrgency } = await import("../src/lib/incidents.ts");
+  const now = Date.parse("2026-11-21T12:00:00Z");
+  const rows = [
+    incident({ id: "critical", priorityId: 4, deadline: "2026-11-21T13:00:00Z" }),
+    incident({ id: "low", priorityId: 1, deadline: "2026-11-21T12:15:00Z" }),
+  ];
+  assert.equal(sortIncidentsByUrgency(rows, (row) => remainingSla(row, 0, now))[0].id, "critical");
+  assert.equal(sortIncidentsByUrgency(rows, (row) => remainingSla(row, 0, now + 1000))[0].id, "low");
+});

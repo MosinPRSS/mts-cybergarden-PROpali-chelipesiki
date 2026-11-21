@@ -29,12 +29,27 @@ services:
              python -m scripts.seed &&
              uvicorn main:app --host 0.0.0.0 --port 8000"
 
-  #helper:
-  #  depends_on:
-  #    - backend
-  #ai:
-  #  depends_on:
-  #    - backend
+  ai:
+    build:
+      context: .
+      dockerfile: ai/Dockerfile
+    environment:
+      GRPC_PORT: '50051'
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+      DEEPSEEK_TIMEOUT_SECONDS: ${DEEPSEEK_TIMEOUT_SECONDS:-60}
+      DEEPSEEK_MAX_TOKENS: ${DEEPSEEK_MAX_TOKENS:-2048}
+    expose:
+      - '50051'
+    stop_grace_period: 75s
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
   db:
     image: postgres:18-alpine
     container_name: hack_db

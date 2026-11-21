@@ -63,6 +63,7 @@ export interface Incident {
   ai: string;
   updated: string;
   created?: string;
+  created_at?: string;
   groups?: string[];
   tags?: string[];
 }
@@ -78,6 +79,7 @@ export interface Column {
 }
 
 export type DistributionMode = "significant" | "multi";
+export type IncidentView = "all" | "research" | "team";
 
 export interface AlertBannerState {
   type: "critical" | "assigned" | "resolved";

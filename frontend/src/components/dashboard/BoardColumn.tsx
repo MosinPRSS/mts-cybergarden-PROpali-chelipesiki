@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Column, Incident } from "../../types";
-import { isResolvedOlderThanDay } from "../../lib";
+import { isResolvedOlderThanDay, sortIncidentsByUrgency } from "../../lib";
 import { Icon } from "../common/Icon";
 import { IncidentCard } from "./IncidentCard";
 
@@ -19,11 +19,12 @@ export function BoardColumn({
   onSelectIncident,
   onResolveIncident,
 }: BoardColumnProps) {
-  const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+  const [isAccordionOpen, setIsAccordionOpen] = useState(column.key === "Исследование ситуации");
 
   // Решённые инциденты старше суток скрываются в гармошку в конце списка
-  const regularItems = items.filter((item) => !isResolvedOlderThanDay(item));
-  const olderResolvedItems = items.filter((item) => isResolvedOlderThanDay(item));
+  const sortedItems = sortIncidentsByUrgency(items, slaFor);
+  const regularItems = sortedItems.filter((item) => !isResolvedOlderThanDay(item));
+  const olderResolvedItems = sortedItems.filter((item) => isResolvedOlderThanDay(item));
 
   return (
     <section className={`board-column ${column.badgeClass}`} key={column.key}>

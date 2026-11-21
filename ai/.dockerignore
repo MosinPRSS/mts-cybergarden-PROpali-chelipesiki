@@ -1,0 +1,7 @@
+**
+!ai/
+!ai/requirements.txt
+!ai/main.py
+!ai/healthcheck.py
+!proto/
+!proto/generate.proto

@@ -1,0 +1,132 @@
+syntax = "proto3";
+
+package ai.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Данные передаёт backend.
+service IncidentSummaryService {
+  // Сводка одного инцидента.
+  rpc GenerateIncidentSummary(GenerateIncidentSummaryRequest)
+      returns (GenerateIncidentSummaryResponse);
+}
+
+message GenerateIncidentSummaryRequest {
+  // Основной инцидент.
+  IncidentSnapshot incident = 1;
+
+  // До 10 связанных записей без повторов.
+  repeated RelatedIncident related_incidents = 2;
+
+  // Время анализа, UTC.
+  google.protobuf.Timestamp as_of = 3;
+}
+
+// Снимок полей БД. Отсутствующее optional-поле означает NULL.
+message IncidentSnapshot {
+  string id = 1;
+  string sys_id = 2;
+  IncidentState state_enum = 3;
+  optional string state_reason = 4;
+
+  string header = 5;
+  string description = 6;
+  string short_description = 7;
+
+  google.protobuf.Timestamp submit_date = 8;
+  google.protobuf.Timestamp deadline = 9;
+  google.protobuf.Timestamp completion_date = 10;
+  google.protobuf.Timestamp last_assignment_to_team_date_time = 11;
+
+  string assigned_group_name = 12;
+  string product_name = 13;
+  string product_id = 14;
+  string product_master_id = 15;
+  // Сервис отличается от продукта.
+  string service = 16;
+  optional string service_id = 17;
+  string scenario_name = 18;
+
+  // Шкалы: от 1 (низкий) до 4 (наивысший).
+  int32 priority_id = 19;
+  string priority = 20;
+  int32 urgency_id = 21;
+  string urgency = 22;
+  int32 impact_id = 23;
+  string impact = 24;
+  string inc_type = 25;
+  // 10 — клиентский, 20 — пользовательский, 30 — технологический.
+  int32 service_type_id = 26;
+  string service_type = 27;
+
+  // Флаги не содержат ID связанных записей.
+  bool is_effect = 28;
+  bool is_reason = 29;
+  bool is_double = 30;
+  bool is_master = 31;
+  bool is_root_incident = 32;
+  optional bool is_need_up = 33;
+  // Служебная дата 0001-01-01 передаётся как отсутствие.
+  google.protobuf.Timestamp waiting_exit_date = 34;
+
+  // Решённость определяется статусом.
+  string solution = 35;
+  optional string elimination_type = 36;
+  // Время изменения строки БД.
+  google.protobuf.Timestamp updated_at = 37;
+}
+
+// Номера enum отличаются от state_id ITSM.
+enum IncidentState {
+  INCIDENT_STATE_UNSPECIFIED = 0;
+  INCIDENT_STATE_ASSIGNED = 1;         // state_id: 0.
+  INCIDENT_STATE_WORK_IN_PROGRESS = 2; // state_id: 2.
+  INCIDENT_STATE_RESOLVED = 3;         // state_id: 7.
+  INCIDENT_STATE_CLOSED = 4;           // state_id: 10.
+  INCIDENT_STATE_RESEARCH = 5;         // state_id: 20, уже решён.
+}
+
+message RelatedIncident {
+  IncidentSnapshot incident = 1;
+  // Хотя бы одна причина связи.
+  repeated RelationEvidence relations = 2;
+}
+
+message RelationEvidence {
+  RelationKind kind = 1;
+  // Фактическое объяснение связи.
+  string explanation = 2;
+  // Вычисленная схожесть [0, 1], если доступна.
+  optional float similarity_score = 3;
+}
+
+enum RelationKind {
+  RELATION_KIND_UNSPECIFIED = 0;
+  RELATION_KIND_SIMILAR_DESCRIPTION = 1;
+  // Похожие симптомы и более ранняя регистрация.
+  RELATION_KIND_PREVIOUS_SIMILAR_INCIDENT = 2;
+  RELATION_KIND_SAME_PRODUCT = 3;
+  RELATION_KIND_SAME_SERVICE = 4;
+  // Общая команда не доказывает общую причину.
+  RELATION_KIND_SAME_TEAM = 5;
+}
+
+message GenerateIncidentSummaryResponse {
+  // ID основного инцидента.
+  string incident_id = 1;
+  // Одна сводка с отделением фактов от предположений.
+  string summary = 2;
+  // Только использованные записи из контекста запроса.
+  repeated RelatedIncidentContribution related_incidents_used = 3;
+  // Ограничения анализа.
+  repeated string limitations = 4;
+  google.protobuf.Timestamp generated_at = 5;
+  // Версия основного снимка из запроса.
+  google.protobuf.Timestamp incident_updated_at = 6;
+}
+
+message RelatedIncidentContribution {
+  string incident_id = 1;
+  // Чем запись помогла сводке.
+  string contribution = 2;
+}
