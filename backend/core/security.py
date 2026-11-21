@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 
 from config import settings
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], pbkdf2_sha256__default_rounds=600000, deprecated="auto")
 
 
 def hash_password(password: str) -> str:
@@ -13,7 +13,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return pwd_context.verify(plain, hashed)
+    except (ValueError, TypeError):
+        return False
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

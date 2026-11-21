@@ -7,7 +7,7 @@ import { isIncidentActive, getIncidentGroups, getGroupBadgeClass, getPrimaryGrou
 interface TeamCardProps {
   team: Team;
   incidents: Incident[];
-  onOpenAssignModal: (team: Team) => void;
+  onOpenAssignModal?: (team: Team) => void;
   onSelectIncident: (incident: Incident) => void;
 }
 
@@ -118,7 +118,7 @@ export function TeamCard({
       {recommendations.length > 0 && (
         <div
           className="team-ai-banner"
-          onClick={() => onOpenAssignModal(team)}
+          onClick={() => onOpenAssignModal?.(team)}
           role="button"
           tabIndex={0}
         >
@@ -170,7 +170,8 @@ export function TeamCard({
       <div className="team-card-footer">
         <button
           className="assign-team-btn"
-          onClick={() => onOpenAssignModal(team)}
+          disabled={!onOpenAssignModal}
+          onClick={() => onOpenAssignModal?.(team)}
         >
           <Icon name="users" size={15} />
           Привязать инцидент

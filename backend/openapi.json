@@ -1,8 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "МТС — дашборд координатора инцидентов",
-    "description": "API дашборда координатора. PostgreSQL хранит пользователей и инциденты; SSE передаёт обновления подключённым клиентам.\n\nНачальный список: `GET /api/incidents`. Обновления: `GET /api/incidents/stream` через EventSource. SSE — бесконечный ответ, поэтому его удобнее проверять через EventSource или curl -N.\n\nФормат исходной выгрузки сохранён; группы и SLA вычисляются по её атрибутам. Группы внимания доступны только для чтения. Автоматическое слежение за JSON, авторизация и Telegram-бот пока не реализованы.",
+    "title": "МТС Incident Command API",
     "version": "0.2.0"
   },
   "paths": {
@@ -12,7 +11,7 @@
           "incidents"
         ],
         "summary": "Subscribe to live incident updates",
-        "description": "Live-only, currently unauthenticated feed. The producer broadcasts JSON incident arrays without an event name for the existing frontend onmessage handler. No initial snapshot or Last-Event-ID replay is implemented yet.",
+        "description": "Authenticated live-only feed of incident arrays. No initial snapshot or Last-Event-ID replay. The stream closes on logout or session expiry.",
         "operationId": "stream_incidents_api_incidents_stream_get",
         "responses": {
           "200": {
@@ -40,7 +39,12 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
       }
     },
     "/api/incidents": {
@@ -66,6 +70,175 @@
               }
             }
           }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Создать или обновить инцидент",
+        "description": "Принимает один инцидент в формате ITSM-экспорта. Операция идемпотентна: повторная отправка того же `id` обновит запись (upsert). После сохранения обновлённый объект рассылается всем SSE-подписчикам.",
+        "operationId": "create_incident_api_incidents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ошибка валидации — неверный формат поля"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/incidents/{incident_id}/resolve": {
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Отметить инцидент как решённый",
+        "description": "Переводит инцидент в статус Resolved, фиксирует дату завершения и уведомляет подписчиков через SSE.",
+        "operationId": "resolve_incident_api_incidents__incident_id__resolve_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Инцидент не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{incident_id}/assign": {
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Назначить команду на инцидент",
+        "description": "Обновляет назначенную команду (assignedGroupName), фиксирует дату назначения и рассылает SSE.",
+        "operationId": "assign_incident_api_incidents__incident_id__assign_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentAssignRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Инцидент не найден",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -76,6 +249,11 @@
         ],
         "summary": "Получить инцидент по ID",
         "operationId": "get_incident_api_incidents__incident_id__get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
         "parameters": [
           {
             "name": "incident_id",
@@ -129,6 +307,11 @@
         "summary": "Получить исходную запись ITSM без нормализации",
         "description": "Все исходные поля, null, служебные значения и неизвестные дополнительные поля сохраняются без потерь.",
         "operationId": "get_incident_source_api_incidents__incident_id__source_get",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
         "parameters": [
           {
             "name": "incident_id",
@@ -172,6 +355,87 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Войти в аккаунт",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Получить текущего пользователя",
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Выйти из аккаунта",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           }
         }
       }
@@ -242,6 +506,390 @@
           "status"
         ],
         "title": "HealthResponse"
+      },
+      "IncidentAssignRequest": {
+        "properties": {
+          "team": {
+            "type": "string",
+            "title": "Team",
+            "description": "Наименование команды, которой передаётся инцидент"
+          },
+          "assignee": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee",
+            "description": "ФИО ответственного сотрудника"
+          },
+          "assignee_login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Login",
+            "description": "Логин ответственного сотрудника"
+          }
+        },
+        "type": "object",
+        "required": [
+          "team"
+        ],
+        "title": "IncidentAssignRequest"
+      },
+      "IncidentCreate": {
+        "properties": {
+          "sysId": {
+            "type": "string",
+            "title": "Sysid",
+            "description": "Уникальный системный идентификатор записи в ITSM"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Номер инцидента, например INC000012345678"
+          },
+          "state": {
+            "type": "string",
+            "title": "State",
+            "description": "Человекочитаемое состояние на языке источника"
+          },
+          "stateEnum": {
+            "$ref": "#/components/schemas/IncidentState",
+            "description": "Нормализованное состояние"
+          },
+          "stateId": {
+            "type": "integer",
+            "title": "Stateid",
+            "description": "Код состояния: 0 Assigned, 2 WorkInProgress, 7 Resolved, 10 Closed, 20 Research"
+          },
+          "stateReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Statereason"
+          },
+          "stateReasonId": {
+            "type": "string",
+            "title": "Statereasonid",
+            "default": "1"
+          },
+          "submitDate": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Submitdate",
+            "description": "Время регистрации инцидента (ISO 8601 с TZ)"
+          },
+          "deadline": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline"
+          },
+          "completionDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completiondate"
+          },
+          "lastAssignmentToTeamDateTime": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastassignmenttoteamdatetime"
+          },
+          "header": {
+            "type": "string",
+            "title": "Header",
+            "description": "Заголовок инцидента"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Полное описание"
+          },
+          "shortDescription": {
+            "type": "string",
+            "title": "Shortdescription",
+            "description": "Краткое описание"
+          },
+          "assignedGroupName": {
+            "type": "string",
+            "title": "Assignedgroupname",
+            "description": "Команда-исполнитель"
+          },
+          "assignedEmployee": {
+            "type": "string",
+            "title": "Assignedemployee",
+            "description": "ФИО ответственного"
+          },
+          "assignedEmployeeLogin": {
+            "type": "string",
+            "title": "Assignedemployeelogin",
+            "description": "Логин ответственного"
+          },
+          "initiatorName": {
+            "type": "string",
+            "title": "Initiatorname",
+            "description": "ФИО инициатора"
+          },
+          "initiatorLogin": {
+            "type": "string",
+            "title": "Initiatorlogin",
+            "description": "Логин инициатора"
+          },
+          "isEffect": {
+            "type": "boolean",
+            "title": "Iseffect",
+            "default": false
+          },
+          "isReason": {
+            "type": "boolean",
+            "title": "Isreason",
+            "default": false
+          },
+          "isDouble": {
+            "type": "boolean",
+            "title": "Isdouble",
+            "default": false
+          },
+          "isMaster": {
+            "type": "boolean",
+            "title": "Ismaster",
+            "default": false
+          },
+          "incType": {
+            "type": "string",
+            "title": "Inctype",
+            "default": "МИ"
+          },
+          "serviceTypeId": {
+            "type": "integer",
+            "title": "Servicetypeid",
+            "description": "10 | 20 | 30"
+          },
+          "serviceType": {
+            "type": "string",
+            "title": "Servicetype"
+          },
+          "priorityId": {
+            "type": "integer",
+            "title": "Priorityid",
+            "description": "1 Низкий, 2 Средний, 3 Высокий, 4 Наивысший"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority"
+          },
+          "urgencyId": {
+            "type": "integer",
+            "title": "Urgencyid",
+            "default": 2
+          },
+          "urgency": {
+            "type": "string",
+            "title": "Urgency",
+            "default": "Средняя"
+          },
+          "impactId": {
+            "type": "integer",
+            "title": "Impactid",
+            "default": 2
+          },
+          "impact": {
+            "type": "string",
+            "title": "Impact",
+            "default": "Средний"
+          },
+          "waitingExitDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waitingexitdate"
+          },
+          "isRootIncident": {
+            "type": "boolean",
+            "title": "Isrootincident",
+            "default": false
+          },
+          "productName": {
+            "type": "string",
+            "title": "Productname",
+            "default": ""
+          },
+          "productId": {
+            "type": "string",
+            "title": "Productid",
+            "default": ""
+          },
+          "productMasterId": {
+            "type": "string",
+            "title": "Productmasterid",
+            "default": ""
+          },
+          "productUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Producturl"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service",
+            "description": "Наименование затронутого сервиса"
+          },
+          "serviceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serviceid"
+          },
+          "scenarioName": {
+            "type": "string",
+            "title": "Scenarioname",
+            "default": ""
+          },
+          "isNeedUp": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isneedup"
+          },
+          "eliminationType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eliminationtype"
+          },
+          "eliminationTypeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eliminationtypeid"
+          },
+          "receivingChannel": {
+            "type": "string",
+            "title": "Receivingchannel",
+            "default": "Автоматический"
+          },
+          "solution": {
+            "type": "string",
+            "title": "Solution",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "sysId",
+          "id",
+          "state",
+          "stateEnum",
+          "stateId",
+          "submitDate",
+          "header",
+          "description",
+          "shortDescription",
+          "assignedGroupName",
+          "assignedEmployee",
+          "assignedEmployeeLogin",
+          "initiatorName",
+          "initiatorLogin",
+          "serviceTypeId",
+          "serviceType",
+          "priorityId",
+          "priority",
+          "service"
+        ],
+        "title": "IncidentCreate",
+        "description": "Payload для создания нового инцидента через POST /api/incidents.\n\nСтруктура полностью соответствует формату ITSM-экспорта (IncidentSource),\nчтобы генератор и внешние системы могли отправлять одинаковые тела запросов."
+      },
+      "IncidentCreateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Номер созданного инцидента"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created",
+            "description": "True — создан, False — обновлён (upsert)"
+          },
+          "sseNotified": {
+            "type": "integer",
+            "title": "Ssenotified",
+            "description": "Количество SSE-подписчиков, которым отправлено уведомление"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "created",
+          "sseNotified"
+        ],
+        "title": "IncidentCreateResponse"
       },
       "IncidentResponse": {
         "properties": {
@@ -675,6 +1323,59 @@
         ],
         "title": "IncidentState"
       },
+      "LoginRequest": {
+        "properties": {
+          "login": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9_.@+\\-]+$",
+            "title": "Login"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "login",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "UserResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "login": {
+            "type": "string",
+            "title": "Login"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "role": {
+            "type": "string",
+            "const": "coordinator",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "login",
+          "full_name",
+          "role"
+        ],
+        "title": "UserResponse"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -714,6 +1415,13 @@
           "type"
         ],
         "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "mts_session"
       }
     }
   },

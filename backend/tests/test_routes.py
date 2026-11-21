@@ -5,12 +5,13 @@ from unittest.mock import patch
 
 from core.sse_manager import sse_manager
 from main import app
-from tests.helpers import ASGIConnection, parse_sse
+from tests.helpers import ASGIConnection, parse_sse, authorize_test_user, mock_lifespan_database
 
 
 class SSERouteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         sse_manager.close_all()
+        authorize_test_user(self)
 
     async def asyncTearDown(self):
         remaining = sse_manager.connection_count
@@ -90,9 +91,10 @@ class SSERouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sse_manager.connection_count, 0)
 
     async def test_application_shutdown_finishes_active_http_streams(self):
-        async with app.router.lifespan_context(app):
-            client = await self.connect_stream()
-            self.assertEqual(sse_manager.connection_count, 1)
+        with mock_lifespan_database():
+            async with app.router.lifespan_context(app):
+                client = await self.connect_stream()
+                self.assertEqual(sse_manager.connection_count, 1)
         terminal = await client.next_message()
         self.assertFalse(terminal.get("more_body", False))
         self.assertEqual(terminal.get("body", b""), b"")

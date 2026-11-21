@@ -1,0 +1,37 @@
+[
+  {
+    "login": "admin",
+    "name": "Администратор",
+    "surname": "МТС",
+    "role": "coordinator",
+    "pass_hash": "$pbkdf2-sha256$600000$cc4ZYwwhRCjl/L.3VgphbA$9WBTjxGbwKRSdWyjCAualHpaNhHUAYWDT6MQ2jblvS0"
+  },
+  {
+    "login": "coordinator",
+    "name": "Координатор",
+    "surname": "МТС",
+    "role": "coordinator",
+    "pass_hash": "$pbkdf2-sha256$600000$0Drn3FsL4dzbe8/5P2cMIQ$3LAClaJeXNqWUhEFwRHG3k1R7Zqb/DQQRqjGOAxh9jE"
+  },
+  {
+    "login": "engineer1",
+    "name": "Первый инженер",
+    "surname": "МТС",
+    "role": "coordinator",
+    "pass_hash": "$pbkdf2-sha256$600000$B6D0vjeG8F5LCQHgfG9NaQ$wNpi0gfP6sYnUoaSvgTAUsan5MBoxxFJYt8IQkUOKvQ"
+  },
+  {
+    "login": "engineer2",
+    "name": "Второй инженер",
+    "surname": "МТС",
+    "role": "coordinator",
+    "pass_hash": "$pbkdf2-sha256$600000$9L639j4nRKj1ntPau3fOGQ$8cRgTNZQb0c9DVsEobDZgX81qWaK3NuPuEnoqyG4vv8"
+  },
+  {
+    "login": "observer",
+    "name": "Наблюдатель",
+    "surname": "МТС",
+    "role": "coordinator",
+    "pass_hash": "$pbkdf2-sha256$600000$c84Zg5ASQijl/H.PMcaY8w$r4teL0vE8tm06GAu9W/wytH2RxQtQfzySE8Lyy9x920"
+  }
+]

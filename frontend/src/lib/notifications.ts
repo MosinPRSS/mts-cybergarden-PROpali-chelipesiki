@@ -4,12 +4,12 @@ import { getIncidentGroups } from "./groups.ts";
 export const NOTIFICATIONS_STORAGE_KEY = "mts_notifications_history";
 export const MAX_NOTIFICATIONS_STORED = 100;
 
-export function loadNotifications(): NotificationItem[] {
+export function loadNotifications(userId?: number): NotificationItem[] {
   if (typeof window === "undefined" || !window.localStorage) {
     return [];
   }
   try {
-    const raw = window.localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+    const raw = window.localStorage.getItem(userId === undefined ? NOTIFICATIONS_STORAGE_KEY : `${NOTIFICATIONS_STORAGE_KEY}:${userId}`);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
@@ -21,13 +21,13 @@ export function loadNotifications(): NotificationItem[] {
   return [];
 }
 
-export function saveNotifications(notifications: NotificationItem[]): void {
+export function saveNotifications(notifications: NotificationItem[], userId?: number): void {
   if (typeof window === "undefined" || !window.localStorage) {
     return;
   }
   try {
     const sliced = notifications.slice(0, MAX_NOTIFICATIONS_STORED);
-    window.localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(sliced));
+    window.localStorage.setItem(userId === undefined ? NOTIFICATIONS_STORAGE_KEY : `${NOTIFICATIONS_STORAGE_KEY}:${userId}`, JSON.stringify(sliced));
   } catch (err) {
     console.warn("Failed to save notifications to localStorage:", err);
   }

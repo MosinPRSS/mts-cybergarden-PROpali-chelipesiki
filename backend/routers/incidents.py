@@ -8,17 +8,19 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
+from core.auth import get_current_session, require_operator
 from core.sse_manager import sse_manager
 from domain.incidents import IncidentSource, IncidentState
 from models import Incident
 from schemas.incidents import ErrorResponse, IncidentAssignRequest, IncidentCreate, IncidentCreateResponse, IncidentResponse
 
-router = APIRouter(prefix="/api/incidents", tags=["incidents"])
+router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[Depends(get_current_session)])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 @router.get(
     "", response_model=list[IncidentResponse],
+    dependencies=[Depends(get_current_session)],
     summary="Получить список инцидентов",
     description="Начальный снимок из PostgreSQL. Для последующих обновлений используется SSE-подписка.",
 )
@@ -47,6 +49,7 @@ async def list_incidents(db: DatabaseSession):
 
 @router.post(
     "/{incident_id}/resolve",
+    dependencies=[Depends(require_operator)],
     response_model=IncidentResponse,
     summary="Отметить инцидент как решённый",
     description="Переводит инцидент в статус Resolved, фиксирует дату завершения и уведомляет подписчиков через SSE.",
@@ -86,6 +89,7 @@ async def resolve_incident(incident_id: str, db: DatabaseSession):
 
 @router.post(
     "/{incident_id}/assign",
+    dependencies=[Depends(require_operator)],
     response_model=IncidentResponse,
     summary="Назначить команду на инцидент",
     description="Обновляет назначенную команду (assignedGroupName), фиксирует дату назначения и рассылает SSE.",
@@ -127,6 +131,7 @@ async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: 
 
 @router.get(
     "/{incident_id}", response_model=IncidentResponse,
+    dependencies=[Depends(get_current_session)],
     summary="Получить инцидент по ID",
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
@@ -139,6 +144,7 @@ async def get_incident(incident_id: str, db: DatabaseSession):
 
 @router.get(
     "/{incident_id}/source", response_model=dict,
+    dependencies=[Depends(get_current_session)],
     summary="Получить исходную запись ITSM без нормализации",
     description="Все исходные поля, null, служебные значения и неизвестные дополнительные поля сохраняются без потерь.",
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},

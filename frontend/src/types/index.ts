@@ -26,6 +26,13 @@ export type IconName =
 
 export type NotificationType = "critical" | "assigned" | "resolved" | "info";
 
+export interface AuthUser {
+  id: number;
+  login: string;
+  full_name: string;
+  role: "coordinator";
+}
+
 export interface NotificationItem {
   id: string;
   type: NotificationType;

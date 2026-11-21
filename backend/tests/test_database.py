@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 
 from alembic import command
 from alembic.autogenerate import compare_metadata
@@ -19,12 +20,13 @@ from main import app
 from models import Incident, IncidentState, LegacyIncident, User
 from scripts.seed import FIXTURE_PATH, seed_data
 from services.incidents import import_incidents
-from tests.helpers import ASGIConnection
+from tests.helpers import ASGIConnection, authorize_test_user
 
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "Run python -m scripts.test_database for PostgreSQL tests")
 class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        authorize_test_user(self)
         url = make_url(os.environ["TEST_DATABASE_URL"])
         if not (url.database or "").startswith("mts_test_"):
             self.fail("Database tests require an isolated mts_test_* database")
@@ -34,6 +36,12 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         await self.migrate("upgrade", "head")
         self.addAsyncCleanup(self.migrate, "downgrade", "base")
         self.records = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        cutoff = datetime.now(timezone.utc) - timedelta(days=3)
+        # Revision 0003 intentionally removes old resolved fixture records.
+        self.retained_records = [row for row in self.records if not (
+            row["stateEnum"] in ("Resolved", "Closed") and row.get("completionDate")
+            and datetime.fromisoformat(row["completionDate"].replace("Z", "+00:00")) < cutoff
+        )]
 
         async def test_db():
             async with self.sessions() as session:
@@ -69,14 +77,14 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             )
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
         self.assertEqual(differences, [])
-        self.assertEqual(revision, "0002")
+        self.assertEqual(revision, "0005")
 
     async def test_import_preserves_all_original_fields_without_creating_accounts(self):
         self.assertEqual(await self.seed(), {"incidents_created": 44, "incidents_updated": 0, "incidents_unchanged": 0})
         async with self.sessions() as session:
-            self.assertEqual(await session.scalar(select(func.count()).select_from(Incident)), 44)
+            self.assertEqual(await session.scalar(select(func.count()).select_from(Incident)), len(self.retained_records))
             self.assertEqual(await session.scalar(select(func.count()).select_from(User)), 0)
-            for source in self.records:
+            for source in self.retained_records:
                 incident = await session.get(Incident, source["id"])
                 self.assertEqual(incident.source_payload, source)
                 self.assertEqual(incident.sys_id, source["sysId"])
@@ -97,7 +105,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             incident.tags = ["Наблюдение"]
         async with self.sessions() as session:
             updated = (await session.get(Incident, self.records[0]["id"])).updated_at
-        self.assertEqual(await self.seed(), {"incidents_created": 0, "incidents_updated": 0, "incidents_unchanged": 44})
+        self.assertEqual(await self.seed(), {"incidents_created": 44 - len(self.retained_records), "incidents_updated": 0, "incidents_unchanged": len(self.retained_records)})
         async with self.sessions() as session:
             incident = await session.get(Incident, self.records[0]["id"])
             self.assertEqual(incident.ingested_at, ingested)
@@ -113,7 +121,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         changed[0]["deadline"] = "2026-12-01T00:00:00Z"
         async with self.sessions.begin() as session:
             result = await import_incidents(session, changed)
-        self.assertEqual(result, {"incidents_created": 0, "incidents_updated": 1, "incidents_unchanged": 43})
+        self.assertEqual(result, {"incidents_created": 44 - len(self.retained_records), "incidents_updated": 1, "incidents_unchanged": len(self.retained_records) - 1})
         async with self.sessions() as session:
             incident = await session.get(Incident, changed[0]["id"])
             self.assertEqual(incident.to_dict()["groups"], ["Критические", "На координаторах"])
@@ -162,7 +170,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             status, _, body = await client.response()
         self.assertEqual(status, 200)
         incidents = json.loads(body)
-        self.assertEqual(len(incidents), 44)
+        self.assertEqual(len(incidents), len(self.retained_records))
         counts = {name: sum(name in row["groups"] for row in incidents) for name in ["Критические", "На координаторах", "Высокий приоритет", "Исследование ситуации"]}
         self.assertEqual(list(counts.values()), [0, 2, 1, 5])
         self.assertEqual(sum(row["is_active"] for row in incidents), 24)
@@ -217,7 +225,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(legacy.summary, "Preserve me")
             self.assertEqual(legacy.assignee_id, user_id)
             self.assertEqual(legacy.assignee.login, "legacy")
-            self.assertEqual(await session.scalar(select(func.count()).select_from(Incident)), 44)
+            self.assertEqual(await session.scalar(select(func.count()).select_from(Incident)), len(self.retained_records))
             self.assertEqual(await session.scalar(select(func.count()).select_from(User)), 1)
 
     async def test_migration_can_be_reverted_and_reapplied(self):
@@ -230,3 +238,168 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("legacy_incidents", tables)
         await self.migrate("upgrade", "head")
         self.assertEqual((await self.seed())["incidents_created"], 44)
+
+    async def auth_request(self, path, *, method="GET", data=None, cookie=None):
+        headers = [(b"content-type", b"application/json")]
+        if cookie:
+            headers.append((b"cookie", cookie))
+        async with ASGIConnection(path, method=method, headers=headers,
+                                  body=json.dumps(data).encode() if data is not None else b"") as client:
+            status, response_headers, body = await client.response()
+        return status, response_headers, json.loads(body) if body else None
+
+    def enable_real_auth(self):
+        from core.auth import get_current_session
+        from routers.auth import _attempts
+        app.dependency_overrides.pop(get_current_session, None)
+        _attempts.clear()
+        self.addCleanup(_attempts.clear)
+
+    async def create_auth_test_account(self, login="ivan.ivanov"):
+        from core.security import hash_password
+        from models import UserRole
+        payload = {"login": login, "password": "a long passphrase"}
+        async with self.sessions.begin() as db:
+            db.add(User(login=login, name="Иван", surname="Иванов", role=UserRole.COORDINATOR,
+                        pass_hash=hash_password(payload["password"])))
+        return payload
+
+    async def test_auth_login_restore_and_revocable_logout(self):
+        from core.auth import token_digest
+        from core.security import verify_password
+        from models import UserSession
+        self.enable_real_auth()
+        payload = await self.create_auth_test_account()
+        status, headers, user = await self.auth_request("/api/auth/login", method="POST", data=payload)
+        self.assertEqual(status, 200)
+        self.assertEqual((user["login"], user["full_name"], user["role"]), ("ivan.ivanov", "Иванов Иван", "coordinator"))
+        self.assertNotIn("pass_hash", user)
+        cookie = headers[b"set-cookie"].split(b";", 1)[0]
+        self.assertIn(b"HttpOnly", headers[b"set-cookie"])
+        self.assertIn(b"SameSite=strict", headers[b"set-cookie"])
+        async with self.sessions() as db:
+            stored = await db.get(User, user["id"])
+            self.assertTrue(verify_password(payload["password"], stored.pass_hash))
+            raw_token = cookie.decode().split("=", 1)[1]
+            self.assertIsNotNone(await db.get(UserSession, token_digest(raw_token)))
+            self.assertIsNone(await db.get(UserSession, raw_token))
+        status, _, restored = await self.auth_request("/api/auth/me", cookie=cookie)
+        self.assertEqual((status, restored), (200, user))
+        status, _, _ = await self.auth_request("/api/auth/logout", method="POST", cookie=cookie)
+        self.assertEqual(status, 204)
+        self.assertEqual((await self.auth_request("/api/auth/me", cookie=cookie))[0], 401)
+        status, _, _ = await self.auth_request("/api/auth/login", method="POST", data={"login": "IVAN.IVANOV", "password": "wrong"})
+        self.assertEqual(status, 401)
+        status, headers, _ = await self.auth_request("/api/auth/login", method="POST", data={"login": "IVAN.IVANOV", "password": payload["password"]})
+        self.assertEqual(status, 200)
+        self.assertNotEqual(headers[b"set-cookie"].split(b";", 1)[0], cookie)
+
+    async def test_auth_expiry_and_privilege_escalation(self):
+        from models import UserSession
+        self.enable_real_auth()
+        payload = await self.create_auth_test_account()
+        self.assertEqual((await self.auth_request("/api/auth/login", method="POST", data={**payload, "role": "admin"}))[0], 422)
+        status, headers, user = await self.auth_request("/api/auth/login", method="POST", data=payload)
+        self.assertEqual(status, 200)
+        self.assertEqual(user["role"], "coordinator")
+        async with self.sessions.begin() as db:
+            sessions = (await db.scalars(select(UserSession))).all()
+            self.assertEqual(len(sessions), 1)
+            sessions[0].expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        cookie = headers[b"set-cookie"].split(b";", 1)[0]
+        self.assertEqual((await self.auth_request("/api/auth/me", cookie=cookie))[0], 401)
+
+    async def test_auth_logout_closes_real_stream_and_rejects_reused_cookie(self):
+        from core.sse_manager import sse_manager
+        self.enable_real_auth()
+        payload = await self.create_auth_test_account("stream.user")
+        status, headers, _ = await self.auth_request("/api/auth/login", method="POST", data=payload)
+        self.assertEqual(status, 200)
+        cookie = headers[b"set-cookie"].split(b";", 1)[0]
+        async with ASGIConnection("/api/incidents/stream", headers=[(b"cookie", cookie)]) as client:
+            self.assertEqual((await client.next_message())["status"], 200)
+            await client.next_message()
+            self.assertEqual(sse_manager.connection_count, 1)
+            self.assertEqual((await self.auth_request("/api/auth/logout", method="POST", cookie=cookie))[0], 204)
+            self.assertEqual(sse_manager.connection_count, 0)
+            self.assertFalse((await client.next_message()).get("more_body", False))
+        self.assertEqual((await self.auth_request("/api/incidents/stream", cookie=cookie))[0], 401)
+
+    async def test_five_default_accounts_are_seeded_once_without_resetting_credentials(self):
+        from core.security import hash_password
+        from services.users import seed_default_users
+        async with self.sessions.begin() as db:
+            self.assertEqual(await seed_default_users(db), 5)
+        async with self.sessions.begin() as db:
+            users = (await db.scalars(select(User))).all()
+            self.assertEqual(len(users), 5)
+            self.assertEqual({user.login for user in users}, {"admin", "coordinator", "engineer1", "engineer2", "observer"})
+            self.assertEqual(sorted(user.role.value for user in users), ["coordinator"] * 5)
+            admin = next(user for user in users if user.login == "admin")
+            changed_hash = hash_password("updated passphrase")
+            admin.pass_hash = changed_hash
+            admin.name = "Новое имя"
+        async with self.sessions.begin() as db:
+            self.assertEqual(await seed_default_users(db), 0)
+        async with self.sessions() as db:
+            admin = await db.scalar(select(User).where(User.login == "admin"))
+            self.assertEqual((admin.pass_hash, admin.name), (changed_hash, "Новое имя"))
+            self.assertEqual(await db.scalar(select(func.count()).select_from(User)), 5)
+
+    async def test_other_roles_cannot_login_or_reuse_existing_sessions(self):
+        from core.auth import token_digest
+        from core.security import hash_password
+        from models import UserRole, UserSession
+        self.enable_real_auth()
+        password = "a long passphrase"
+        password_hash = hash_password(password)
+        endpoints = [
+            ("/api/auth/me", "GET"), ("/api/incidents", "GET"),
+            ("/api/incidents", "POST"), ("/api/incidents/INC-1", "GET"),
+            ("/api/incidents/INC-1/source", "GET"), ("/api/incidents/stream", "GET"),
+            ("/api/incidents/INC-1/resolve", "POST"), ("/api/incidents/INC-1/assign", "POST"),
+        ]
+        for role in (UserRole.ADMIN, UserRole.ENGINEER, UserRole.OBSERVER):
+            with self.subTest(role=role.value):
+                token = f"existing-session-{role.value}"
+                async with self.sessions.begin() as db:
+                    user = User(login=f"legacy.{role.value}", name="Test", surname="User",
+                                role=role, pass_hash=password_hash)
+                    db.add(user)
+                    await db.flush()
+                    db.add(UserSession(user_id=user.id, token_hash=token_digest(token),
+                                       expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+                status, headers, data = await self.auth_request("/api/auth/login", method="POST",
+                                                                data={"login": user.login, "password": password})
+                self.assertEqual(status, 403)
+                self.assertIn("только координаторам", data["detail"])
+                self.assertNotIn(b"set-cookie", headers)
+                for path, method in endpoints:
+                    status, _, data = await self.auth_request(path, method=method,
+                        data={} if method == "POST" else None, cookie=f"mts_session={token}".encode())
+                    self.assertEqual(status, 403, (role.value, path))
+                    self.assertIn("только координаторам", data["detail"])
+
+    async def test_coordinator_migration_preserves_credentials_and_revokes_other_sessions(self):
+        from core.security import hash_password
+        from models import UserRole, UserSession
+        await self.migrate("downgrade", "0004")
+        password_hash = hash_password("existing passphrase")
+        async with self.sessions.begin() as db:
+            initial = User(login="engineer1", name="Changed", surname="Profile",
+                           role=UserRole.ENGINEER, pass_hash=password_hash)
+            other = User(login="legacy.engineer", name="Other", surname="User",
+                         role=UserRole.ENGINEER, pass_hash=password_hash)
+            db.add_all([initial, other])
+            await db.flush()
+            expires = datetime.now(timezone.utc) + timedelta(hours=1)
+            db.add_all([UserSession(token_hash="initial-session", user_id=initial.id, expires_at=expires),
+                        UserSession(token_hash="other-session", user_id=other.id, expires_at=expires)])
+        await self.migrate("upgrade", "head")
+        async with self.sessions() as db:
+            promoted = await db.get(User, initial.id)
+            self.assertEqual(promoted.role, UserRole.COORDINATOR)
+            self.assertEqual((promoted.pass_hash, promoted.name), (password_hash, "Changed"))
+            self.assertIsNotNone(await db.get(UserSession, "initial-session"))
+            self.assertIsNone(await db.get(UserSession, "other-session"))
+            self.assertEqual((await db.get(User, other.id)).role, UserRole.ENGINEER)

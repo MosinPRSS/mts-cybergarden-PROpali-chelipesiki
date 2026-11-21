@@ -4,7 +4,7 @@ import unittest
 
 from core.sse_manager import SSEConnectionManager, sse_manager
 from main import app
-from tests.helpers import ASGIConnection
+from tests.helpers import ASGIConnection, authorize_test_user, mock_lifespan_database
 
 
 class ManagerTests(unittest.IsolatedAsyncioTestCase):
@@ -105,6 +105,7 @@ class ManagerTests(unittest.IsolatedAsyncioTestCase):
 class RouteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         sse_manager.close_all()
+        authorize_test_user(self)
 
     async def asyncTearDown(self):
         sse_manager.close_all()
@@ -156,9 +157,10 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("/ws", schema["paths"])
 
     async def test_application_shutdown_closes_subscriptions(self):
-        async with app.router.lifespan_context(app):
-            subscription = await sse_manager.connect()
-            self.assertEqual(sse_manager.connection_count, 1)
+        with mock_lifespan_database():
+            async with app.router.lifespan_context(app):
+                subscription = await sse_manager.connect()
+                self.assertEqual(sse_manager.connection_count, 1)
         self.assertTrue(subscription.closed)
         self.assertEqual(sse_manager.connection_count, 0)
 

@@ -26,6 +26,7 @@ class SSESubscription:
     user_id: int | None
     role: str | None
     queue: asyncio.Queue[ServerSentEvent | None]
+    session_id: str | None = None
     id: str = field(default_factory=lambda: uuid4().hex)
     closed: bool = False
 
@@ -49,13 +50,14 @@ class SSEConnectionManager:
         return len(self._connections)
 
     async def connect(
-        self, user_id: int | None = None, role: str | None = None
+        self, user_id: int | None = None, role: str | None = None, session_id: str | None = None
     ) -> SSESubscription:
         """Identity must come from server-side authentication, never query params."""
         subscription = SSESubscription(
             user_id=user_id,
             role=role,
             queue=asyncio.Queue(maxsize=self._queue_size),
+            session_id=session_id,
         )
         self._connections[subscription.id] = subscription
         logger.info("SSE connected: %s; total=%d", subscription.id, self.connection_count)
@@ -74,9 +76,9 @@ class SSEConnectionManager:
 
     @asynccontextmanager
     async def subscribe(
-        self, user_id: int | None = None, role: str | None = None
+        self, user_id: int | None = None, role: str | None = None, session_id: str | None = None
     ) -> AsyncIterator[SSESubscription]:
-        subscription = await self.connect(user_id=user_id, role=role)
+        subscription = await self.connect(user_id=user_id, role=role, session_id=session_id)
         try:
             yield subscription
         finally:
@@ -85,6 +87,11 @@ class SSEConnectionManager:
     def close_all(self) -> None:
         for subscription in list(self._connections.values()):
             self.disconnect(subscription)
+
+    def close_session(self, session_id: str) -> None:
+        for subscription in list(self._connections.values()):
+            if subscription.session_id == session_id:
+                self.disconnect(subscription)
 
     def _send(
         self,

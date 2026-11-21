@@ -14,8 +14,10 @@ from core.db import AsyncSessionLocal, engine
 from core.sse_manager import sse_manager
 from models import Incident
 from routers.incidents import router as incidents_router
+from routers.auth import router as auth_router
 from routers.sse import router as sse_router
 from schemas.incidents import HealthResponse
+from services.users import seed_default_users
 
 
 def apply_migrations(connection: Connection) -> None:
@@ -58,6 +60,9 @@ async def lifespan(app: FastAPI):
         async with engine.begin() as connection:
             await connection.run_sync(apply_migrations)
 
+        async with AsyncSessionLocal.begin() as session:
+            await seed_default_users(session)
+
         cleanup_task = asyncio.create_task(periodic_cleanup_task())
         yield  # Миграции завершены — API начинает обслуживать запросы.
     finally:
@@ -68,7 +73,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="API",
+    title="МТС Incident Command API",
     version="0.2.0",
     docs_url="/docs", redoc_url="/redoc", openapi_url="/openapi.json",
     openapi_tags=[
@@ -81,6 +86,7 @@ app = FastAPI(
 # Register the static /stream route before /{incident_id}.
 app.include_router(sse_router)
 app.include_router(incidents_router)
+app.include_router(auth_router)
 
 
 @app.get("/health", tags=["system"], response_model=HealthResponse, summary="Проверить процесс API")

@@ -9,7 +9,7 @@ import { getRecommendedIncidentsForTeam } from "../../lib/teams";
 
 interface TeamsViewProps {
   incidents: Incident[];
-  onAssignTeam: (incidentId: string, teamName: string) => void;
+  onAssignTeam?: (incidentId: string, teamName: string) => void;
   onSelectIncident: (incident: Incident) => void;
 }
 
@@ -212,14 +212,14 @@ export function TeamsView({
             key={team.id}
             team={team}
             incidents={incidents}
-            onOpenAssignModal={setSelectedTeamForAssign}
+            onOpenAssignModal={onAssignTeam ? setSelectedTeamForAssign : undefined}
             onSelectIncident={onSelectIncident}
           />
         ))}
       </div>
 
       {/* ASSIGN INCIDENT MODAL */}
-      {selectedTeamForAssign && (
+      {selectedTeamForAssign && onAssignTeam && (
         <AssignIncidentModal
           team={selectedTeamForAssign}
           incidents={incidents}

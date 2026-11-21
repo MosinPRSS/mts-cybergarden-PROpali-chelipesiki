@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NotificationItem } from "../../types";
+import { AuthUser, NotificationItem } from "../../types";
 import { Icon } from "../common/Icon";
 import { NotificationHistory } from "./NotificationHistory";
 
@@ -14,6 +14,9 @@ interface HeaderProps {
   onDeleteNotification: (id: string) => void;
   onClearAllNotifications: () => void;
   onSelectIncident?: (incidentId: string) => void;
+  onLogout: () => void;
+  signingOut: boolean;
+  user: AuthUser;
 }
 
 export function Header({
@@ -27,6 +30,9 @@ export function Header({
   onDeleteNotification,
   onClearAllNotifications,
   onSelectIncident,
+  onLogout,
+  signingOut,
+  user,
 }: HeaderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -60,7 +66,7 @@ export function Header({
   return (
     <header className="topbar">
       <div className="mobile-brand">
-        <span className="brand-mark">М</span>
+        <span className="brand-mark"><img src="/image.png" alt="МТС" /></span>
         <b>Incident Command</b>
       </div>
 
@@ -78,7 +84,7 @@ export function Header({
       <div className="top-actions">
         <div className="system-health">
           <i />
-          Дашборд координатора
+          {user.full_name}
         </div>
 
         <button
@@ -117,6 +123,7 @@ export function Header({
             />
           )}
         </div>
+        <button className="logout-button" onClick={onLogout} disabled={signingOut} title={`Выйти из аккаунта ${user.login}`}>{signingOut ? "Выходим…" : "Выйти"}</button>
       </div>
     </header>
   );

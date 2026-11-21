@@ -11,6 +11,7 @@ from config import PROJECT_DIR
 from core.db import AsyncSessionLocal, engine
 from services.incidents import import_incidents
 from models import LegacyIncident
+from services.users import seed_default_users
 
 FIXTURE_PATH = PROJECT_DIR / "fixtures" / "character_problems.json"
 
@@ -24,6 +25,7 @@ async def main(path: Path = FIXTURE_PATH) -> None:
     try:
         async with AsyncSessionLocal.begin() as session:
             result = await seed_data(session, fixture_path=path)
+            result["users_created"] = await seed_default_users(session)
             result["legacy_incidents_preserved"] = await session.scalar(
                 select(func.count()).select_from(LegacyIncident)
             )

@@ -19,7 +19,10 @@
 """
 
 import argparse
+import getpass
+import http.cookiejar
 import json
+import os
 import random
 import string
 import time
@@ -247,7 +250,7 @@ def generate_incident() -> dict:
 # HTTP-запрос (stdlib, без зависимостей)
 # ---------------------------------------------------------------------------
 
-def post_incident(url: str, payload: dict) -> tuple[int, dict]:
+def post_incident(url: str, payload: dict, *, opener=None) -> tuple[int, dict]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url=url,
@@ -256,10 +259,21 @@ def post_incident(url: str, payload: dict) -> tuple[int, dict]:
         headers={"Content-Type": "application/json; charset=utf-8"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        open_request = opener.open if opener is not None else urllib.request.urlopen
+        with open_request(req, timeout=10) as resp:
             return resp.status, json.loads(resp.read())
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read() or b"{}")
+
+
+def authenticate(opener, base_url: str, login: str, password: str) -> None:
+    request = urllib.request.Request(
+        base_url.rstrip("/") + "/api/auth/login",
+        data=json.dumps({"login": login, "password": password}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    with opener.open(request, timeout=15) as response:
+        response.read()
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +299,10 @@ def main() -> None:
         help="Пауза между запросами в секундах (по умолчанию: 0)",
     )
     parser.add_argument(
+        "--login", default=os.getenv("MTS_COORDINATOR_LOGIN", "coordinator"),
+        help="Логин координатора (также MTS_COORDINATOR_LOGIN)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true",
         help="Только вывести сгенерированный JSON, не отправлять на сервер",
     )
@@ -293,6 +311,17 @@ def main() -> None:
     endpoint = args.url.rstrip("/") + "/api/incidents"
     infinite = args.count == 0
     sent = 0
+    opener = None
+    password = ""
+    if not args.dry_run:
+        password = os.getenv("MTS_COORDINATOR_PASSWORD") or getpass.getpass("Пароль координатора: ")
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+        try:
+            authenticate(opener, args.url, args.login, password)
+        except urllib.error.HTTPError as error:
+            parser.exit(1, f"Вход не выполнен (HTTP {error.code}). Доступ разрешён только координаторам.\n")
+        except urllib.error.URLError:
+            parser.exit(1, "Не удалось подключиться к серверу.\n")
 
     print(f"Цель: {endpoint}")
     print(f"Режим: {'бесконечный' if infinite else args.count} инцидентов, интервал {args.interval}с\n")
@@ -308,7 +337,10 @@ def main() -> None:
                     time.sleep(args.interval)
                 continue
 
-            status, response = post_incident(endpoint, incident)
+            status, response = post_incident(endpoint, incident, opener=opener)
+            if status == 401:
+                authenticate(opener, args.url, args.login, password)
+                status, response = post_incident(endpoint, incident, opener=opener)
             ts = datetime.now().strftime("%H:%M:%S")
             if 200 <= status < 300:
                 action = "создан" if response.get("created") else "обновлён"

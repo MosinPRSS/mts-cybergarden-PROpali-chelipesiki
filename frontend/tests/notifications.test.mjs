@@ -136,3 +136,17 @@ test("loadNotifications and saveNotifications interact with localStorage safely"
   const reloaded = loadNotifications();
   assert.equal(reloaded.length, MAX_NOTIFICATIONS_STORED);
 });
+
+test("notification history is isolated between signed-in accounts", (t) => {
+  const storage = new Map();
+  const previous = globalThis.window;
+  globalThis.window = { localStorage: {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  } };
+  t.after(() => { if (previous === undefined) delete globalThis.window; else globalThis.window = previous; });
+  const notification = createNotification({ type: "info", title: "Для первого", message: "История первого пользователя" });
+  saveNotifications([notification], 1);
+  assert.deepEqual(loadNotifications(1), JSON.parse(JSON.stringify([notification])));
+  assert.deepEqual(loadNotifications(2), []);
+});

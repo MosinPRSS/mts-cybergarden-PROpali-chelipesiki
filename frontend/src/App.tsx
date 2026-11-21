@@ -8,6 +8,7 @@ import {
   AlertBannerState,
   LiveStatusState,
   NotificationItem,
+  AuthUser,
 } from "./types";
 import { SIGNIFICANCE_ORDER } from "./data";
 import {
@@ -37,8 +38,60 @@ import {
   Drawer,
 } from "./components/dashboard";
 import { TeamsView } from "./components/teams";
+import { AuthScreen } from "./components/auth/AuthScreen";
+import { AuthError, fetchCurrentUser, logout, SESSION_EXPIRED_EVENT } from "./lib/auth";
 
 export function App() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetchCurrentUser().then((current) => { if (active) setUser(current); })
+      .catch((err) => { if (active && (!(err instanceof AuthError) || err.status !== 401)) setError(err.message); })
+      .finally(() => { if (active) setLoading(false); });
+    const expire = (event: Event) => {
+      setUser(null);
+      const message = (event as CustomEvent).detail;
+      setError(typeof message === "string" ? message : "Сессия завершена. Войдите снова.");
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, expire);
+    return () => { active = false; window.removeEventListener(SESSION_EXPIRED_EVENT, expire); };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const check = () => {
+      fetchCurrentUser().catch((err) => {
+        if (active && err instanceof AuthError && (err.status === 401 || err.status === 403)) {
+          setUser(null);
+          setError(err.status === 403 ? err.message : "Сессия завершена. Войдите снова.");
+        }
+      });
+    };
+    const timer = window.setInterval(check, 60000);
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { active = false; clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [user]);
+
+  async function handleLogout() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try { await logout(); setUser(null); setError(""); }
+    catch (err) { setError(err instanceof Error ? err.message : "Не удалось выйти. Попробуйте ещё раз."); }
+    finally { setSigningOut(false); }
+  }
+
+  if (loading) return <div className="auth-loading" role="status"><img src="/image.png" alt="МТС" /><span>Проверяем сессию…</span></div>;
+  if (!user) return <AuthScreen initialError={error} onAuthenticated={(current) => { setError(""); setUser(current); }} />;
+  return <><Dashboard key={user.id} user={user} onLogout={handleLogout} signingOut={signingOut} />{error && <div className="session-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Закрыть сообщение">×</button></div>}</>;
+}
+
+function Dashboard({ user, onLogout, signingOut }: { user: AuthUser; onLogout: () => void; signingOut: boolean }) {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [selected, setSelected] = useState<Incident | null>(null);
   const [query, setQuery] = useState("");
@@ -48,7 +101,7 @@ export function App() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [liveStatus, setLiveStatus] = useState<LiveStatusState | null>(null);
   const [alertBanner, setAlertBanner] = useState<AlertBannerState | null>(null);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(() => loadNotifications());
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() => loadNotifications(user.id));
 
   // 'significant': раскидывать строго по самой значимой группе
   // 'multi': отображать карточку во всех группах одновременно
@@ -58,8 +111,8 @@ export function App() {
 
   // Save notifications to localStorage
   useEffect(() => {
-    saveNotifications(notifications);
-  }, [notifications]);
+    saveNotifications(notifications, user.id);
+  }, [notifications, user.id]);
 
   // SLA countdown timer
   useEffect(() => {
@@ -82,10 +135,11 @@ export function App() {
 
   // ─── Real-Time Sync with Backend incidents.json ─────────────────────────
   useEffect(() => {
+    let active = true;
     // 1. Initial snapshot fetch
     fetchIncidents()
       .then((data) => {
-        if (Array.isArray(data)) {
+        if (active && Array.isArray(data)) {
           setIncidents(data);
           setSecondsPassed(0);
           const map = new Map<string, Incident>();
@@ -95,7 +149,7 @@ export function App() {
           setNotifications((prev) => {
             if (prev.length === 0) {
               const seeded = seedInitialNotifications(data);
-              saveNotifications(seeded);
+              saveNotifications(seeded, user.id);
               return seeded;
             }
             return prev;
@@ -232,10 +286,11 @@ export function App() {
     initSSE();
 
     return () => {
+      active = false;
       if (eventSource) eventSource.close();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, []);
+  }, [user.id]);
 
   const slaFor = useCallback(
     (incident: Incident) => remainingSla(incident, secondsPassed),
@@ -524,6 +579,7 @@ export function App() {
         activeNav={activeNav}
         onSelectNav={setActiveNav}
         criticalCount={criticalCount}
+        user={user}
       />
 
       {/* MAIN */}
@@ -539,6 +595,9 @@ export function App() {
           onDeleteNotification={handleDeleteNotification}
           onClearAllNotifications={handleClearAllNotifications}
           onSelectIncident={handleSelectIncidentById}
+          onLogout={onLogout}
+          signingOut={signingOut}
+          user={user}
         />
 
         <div className="content">

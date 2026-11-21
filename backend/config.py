@@ -24,7 +24,8 @@ class Setup(BaseSettings):
     SECRET_KEY: str = Field(default_factory=lambda: token_urlsafe(32), repr=False)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    AUTH_COOKIE_SECURE: bool = False
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
 
     @property
     def database_url(self) -> str:
