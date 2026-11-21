@@ -42,7 +42,7 @@ export function Sidebar({ activeNav, onSelectNav, criticalCount }: SidebarProps)
         <div className="operator">
           <span>ЕК</span>
           <div>
-            <b>Елена Котова</b>
+            <b>Даня Попа</b>
             <small>Старший координатор</small>
           </div>
           <i />
