@@ -39,10 +39,6 @@ export function Sidebar({ activeNav, onSelectNav, criticalCount }: SidebarProps)
       </nav>
 
       <div className="sidebar-bottom">
-        <button>
-          <Icon name="settings" />
-          <span>Настройки</span>
-        </button>
         <div className="operator">
           <span>ЕК</span>
           <div>

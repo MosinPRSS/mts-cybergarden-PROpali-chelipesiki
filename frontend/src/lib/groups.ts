@@ -22,6 +22,21 @@ export function isIncidentResolved(incident: Incident): boolean {
   return incident.is_resolved ?? ["Resolved", "Closed", "Research"].includes(incident.status || "");
 }
 
+export function isResolvedOlderThanDay(incident: Incident, now: number = Date.now()): boolean {
+  if (!isIncidentResolved(incident)) {
+    return false;
+  }
+  const dateStr =
+    incident.completionDate ||
+    (incident as unknown as Record<string, unknown>).completion_date ||
+    incident.updated ||
+    (incident as unknown as Record<string, unknown>).updated_at;
+  if (!dateStr || typeof dateStr !== "string") return false;
+  const time = new Date(dateStr).getTime();
+  if (Number.isNaN(time)) return false;
+  return now - time >= 24 * 60 * 60 * 1000;
+}
+
 export function isIncidentActive(incident: Incident): boolean {
   return incident.is_active ?? !isIncidentResolved(incident);
 }

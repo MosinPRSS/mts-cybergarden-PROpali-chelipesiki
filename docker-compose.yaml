@@ -22,6 +22,8 @@ services:
         condition: service_healthy
     ports:
       - '8000:8000'
+    volumes:
+      - ./backend:/app/backend
     command: >
       sh -c "python -m alembic upgrade head &&
              python -m scripts.seed &&

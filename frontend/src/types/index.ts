@@ -10,6 +10,7 @@ export type IconName =
   | "moon"
   | "chevron"
   | "close"
+  | "check"
   | "external"
   | "spark"
   | "clock"
@@ -18,7 +19,21 @@ export type IconName =
   | "filter"
   | "more"
   | "refresh"
-  | "tag";
+  | "tag"
+  | "trash";
+
+export type NotificationType = "critical" | "assigned" | "resolved" | "info";
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  incidentId?: string;
+  service?: string;
+}
 
 export interface Incident {
   id: string;

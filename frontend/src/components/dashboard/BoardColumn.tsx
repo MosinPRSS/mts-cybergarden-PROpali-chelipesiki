@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { Column, Incident } from "../../types";
+import { isResolvedOlderThanDay } from "../../lib";
+import { Icon } from "../common/Icon";
 import { IncidentCard } from "./IncidentCard";
 
 interface BoardColumnProps {
@@ -6,6 +9,7 @@ interface BoardColumnProps {
   items: Incident[];
   slaFor: (incident: Incident) => number | null;
   onSelectIncident: (incident: Incident) => void;
+  onResolveIncident?: (incident: Incident) => void;
 }
 
 export function BoardColumn({
@@ -13,7 +17,14 @@ export function BoardColumn({
   items,
   slaFor,
   onSelectIncident,
+  onResolveIncident,
 }: BoardColumnProps) {
+  const [isAccordionOpen, setIsAccordionOpen] = useState(false);
+
+  // Решённые инциденты старше суток скрываются в гармошку в конце списка
+  const regularItems = items.filter((item) => !isResolvedOlderThanDay(item));
+  const olderResolvedItems = items.filter((item) => isResolvedOlderThanDay(item));
+
   return (
     <section className={`board-column ${column.badgeClass}`} key={column.key}>
       <div className="column-header">
@@ -26,15 +37,51 @@ export function BoardColumn({
       </div>
 
       <div className="column-list">
-        {items.map((incident) => (
+        {regularItems.map((incident) => (
           <IncidentCard
             key={`${column.key}-${incident.id}`}
             incident={incident}
             seconds={slaFor(incident)}
             onClick={() => onSelectIncident(incident)}
+            onResolve={onResolveIncident}
           />
         ))}
+
         {!items.length && <div className="empty-state">Нет инцидентов</div>}
+
+        {/* Гармошка в конце списка для решённых инцидентов старше суток */}
+        {olderResolvedItems.length > 0 && (
+          <div className="column-accordion">
+            <button
+              type="button"
+              className={`accordion-trigger ${isAccordionOpen ? "open" : ""}`}
+              onClick={() => setIsAccordionOpen((prev) => !prev)}
+              aria-expanded={isAccordionOpen}
+            >
+              <div className="accordion-trigger-left">
+                <span className={`accordion-chevron-wrapper ${isAccordionOpen ? "rotated" : ""}`}>
+                  <Icon name="chevron" size={14} />
+                </span>
+                <span>Решённые более суток назад</span>
+              </div>
+              <span className="accordion-count">{olderResolvedItems.length}</span>
+            </button>
+
+            {isAccordionOpen && (
+              <div className="accordion-content">
+                {olderResolvedItems.map((incident) => (
+                  <IncidentCard
+                    key={`${column.key}-${incident.id}`}
+                    incident={incident}
+                    seconds={slaFor(incident)}
+                    onClick={() => onSelectIncident(incident)}
+                    onResolve={onResolveIncident}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

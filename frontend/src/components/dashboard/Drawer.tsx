@@ -1,14 +1,15 @@
 import { Incident } from "../../types";
-import { formatSla, getIncidentGroups, getPrimaryGroup, getGroupBadgeClass } from "../../lib";
+import { formatSla, getIncidentGroups, getPrimaryGroup, getGroupBadgeClass, isIncidentResolved } from "../../lib";
 import { Icon } from "../common/Icon";
 
 interface DrawerProps {
   incident: Incident;
   seconds: number | null;
   onClose: () => void;
+  onResolve?: (incident: Incident) => void;
 }
 
-export function Drawer({ incident, seconds, onClose }: DrawerProps) {
+export function Drawer({ incident, seconds, onClose, onResolve }: DrawerProps) {
   const groups = getIncidentGroups(incident);
   const primary = getPrimaryGroup(incident);
   return (
@@ -60,7 +61,17 @@ export function Drawer({ incident, seconds, onClose }: DrawerProps) {
             <div className="owner-row"><span className="avatar">{incident.assignee?.slice(0, 1) || "—"}</span><div><b>{incident.assignee || "Не назначен"}</b><small>{incident.team}</small></div></div>
           </section>
         </div>
-        <div className="drawer-actions"><button className="primary-action" onClick={() => window.open(`https://itsm.mts.ru/incident/${encodeURIComponent(incident.id)}`, "_blank", "noopener,noreferrer")}>Открыть в ITSM <Icon name="external" size={16} /></button></div>
+        <div className="drawer-actions">
+          {!isIncidentResolved(incident) && onResolve && (
+            <button
+              className="resolve-action"
+              onClick={() => onResolve(incident)}
+            >
+              <Icon name="check" size={16} /> Отметить решённым
+            </button>
+          )}
+          <button className="primary-action" onClick={() => window.open(`https://itsm.mts.ru/incident/${encodeURIComponent(incident.id)}`, "_blank", "noopener,noreferrer")}>Открыть в ITSM <Icon name="external" size={16} /></button>
+        </div>
       </aside>
     </div>
   );

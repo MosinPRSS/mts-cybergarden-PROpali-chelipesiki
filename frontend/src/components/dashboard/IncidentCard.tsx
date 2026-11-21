@@ -1,22 +1,46 @@
 import { Incident } from "../../types";
-import { formatSla, getIncidentGroups, getPrimaryGroup, getGroupBadgeClass } from "../../lib";
+import {
+  formatSla,
+  getIncidentGroups,
+  getPrimaryGroup,
+  getGroupBadgeClass,
+  isIncidentResolved,
+} from "../../lib";
 import { Icon } from "../common/Icon";
 
 interface IncidentCardProps {
   incident: Incident;
   seconds: number | null;
   onClick: () => void;
+  onResolve?: (incident: Incident) => void;
 }
 
-export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) {
-  const dangerSla = seconds !== null && seconds < 15 * 60 && !incident.is_resolved;
+export function IncidentCard({
+  incident,
+  seconds,
+  onClick,
+  onResolve,
+}: IncidentCardProps) {
+  const resolved = isIncidentResolved(incident);
+  const dangerSla = seconds !== null && seconds < 15 * 60 && !resolved;
   const groups = getIncidentGroups(incident);
   const primary = getPrimaryGroup(incident);
   const otherGroups = groups.filter((g) => g !== primary);
   const badgeClass = getGroupBadgeClass(primary);
 
   return (
-    <button className={`incident-card ${badgeClass}`} onClick={onClick}>
+    <div
+      role="button"
+      tabIndex={0}
+      className={`incident-card ${badgeClass}`}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+    >
       <div className="card-topline">
         <span className="incident-id">{incident.id}</span>
         <div className="badges">
@@ -88,13 +112,15 @@ export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) 
         </div>
       </div>
 
-      {incident.ai && <div className="ai-pill">
-        <Icon name="spark" size={15} />
-        <span>
-          <b>AI</b> {incident.ai}
-        </span>
-        <Icon name="chevron" size={14} />
-      </div>}
+      {incident.ai && (
+        <div className="ai-pill">
+          <Icon name="spark" size={15} />
+          <span>
+            <b>AI</b> {incident.ai}
+          </span>
+          <Icon name="chevron" size={14} />
+        </div>
+      )}
 
       <div className="card-footer">
         <span>
@@ -103,6 +129,6 @@ export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) 
         </span>
         <Icon name="more" size={17} />
       </div>
-    </button>
+    </div>
   );
 }

@@ -3,13 +3,13 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
 from core.sse_manager import sse_manager
-from domain.incidents import IncidentSource
+from domain.incidents import IncidentSource, IncidentState
 from models import Incident
 from schemas.incidents import ErrorResponse, IncidentCreate, IncidentCreateResponse, IncidentResponse
 
@@ -23,8 +23,65 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
     description="Начальный снимок из PostgreSQL. Для последующих обновлений используется SSE-подписка.",
 )
 async def list_incidents(db: DatabaseSession):
+    # Очистка на уровне SQL решённых инцидентов с истёкшим сроком 3 дней
+    try:
+        await db.execute(text("SELECT delete_expired_resolved_incidents()"))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        try:
+            await db.execute(
+                text(
+                    "DELETE FROM incidents "
+                    "WHERE (state_id IN (7, 10) OR state_enum IN ('Resolved', 'Closed')) "
+                    "AND COALESCE(completion_date, updated_at) < NOW() - INTERVAL '3 days'"
+                )
+            )
+            await db.commit()
+        except Exception:
+            await db.rollback()
+
     result = await db.scalars(select(Incident).order_by(Incident.submit_date.desc(), Incident.id))
     return [incident.to_dict() for incident in result.unique().all()]
+
+
+@router.post(
+    "/{incident_id}/resolve",
+    response_model=IncidentResponse,
+    summary="Отметить инцидент как решённый",
+    description="Переводит инцидент в статус Resolved, фиксирует дату завершения и уведомляет подписчиков через SSE.",
+    responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
+)
+async def resolve_incident(incident_id: str, db: DatabaseSession):
+    incident = await db.get(Incident, incident_id)
+    if incident is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    now = datetime.now(timezone.utc)
+    incident.state_enum = IncidentState.RESOLVED
+    incident.state_id = 7
+    incident.state = "Решён"
+    if incident.completion_date is None:
+        incident.completion_date = now
+    incident.updated_at = now
+
+    payload = deepcopy(incident.source_payload or {})
+    payload["stateEnum"] = "Resolved"
+    payload["stateId"] = 7
+    payload["state"] = "Решён"
+    payload["completionDate"] = incident.completion_date.isoformat()
+    incident.source_payload = payload
+
+    await db.commit()
+    await db.refresh(incident)
+
+    all_incidents = await db.scalars(
+        select(Incident).order_by(Incident.submit_date.desc(), Incident.id)
+    )
+    full_snapshot = [inc.to_dict() for inc in all_incidents.unique().all()]
+    await sse_manager.broadcast_all(full_snapshot)
+
+    return incident.to_dict()
 
 
 @router.get(

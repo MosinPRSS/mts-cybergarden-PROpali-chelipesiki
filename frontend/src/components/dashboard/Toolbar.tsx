@@ -57,7 +57,7 @@ export function Toolbar({
         </div>
       </div>
 
-      <div className="filters">
+      {/*<div className="filters">
         <button>
           <Icon name="filter" size={16} />
           Фильтры <span>{columnsCount}</span>
@@ -65,7 +65,7 @@ export function Toolbar({
         <button>
           За 24 часа <span className="down">⌄</span>
         </button>
-      </div>
+      </div>*/}
     </div>
   );
 }

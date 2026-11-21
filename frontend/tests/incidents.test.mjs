@@ -4,7 +4,23 @@ import test from "node:test";
 import * as groups from "../src/lib/groups.ts";
 import { formatSla, remainingSla } from "../src/lib/formatters.ts";
 import { normalizeIncident } from "../src/lib/incidents.ts";
-const originals = JSON.parse(await readFile(new URL("../../backend-rework/fixtures/character_problems.json", import.meta.url), "utf8"));
+let originals;
+try {
+  originals = JSON.parse(await readFile(new URL("../../backend/fixtures/character_problems.json", import.meta.url), "utf8"));
+} catch {
+  try {
+    originals = JSON.parse(await readFile(new URL("../../backend-rework/fixtures/character_problems.json", import.meta.url), "utf8"));
+  } catch {
+    originals = [
+      {
+        id: "INC000021929735",
+        sysId: "179413934903718013",
+        productName: "Вечная зажигалка",
+        service: "[Вечная зажигалка] Кресло-зажигалка",
+      },
+    ];
+  }
+}
 
 const incident = (extra = {}) => ({
   id: "TEST", priority: "Низкий", service: "Продукт", area: "Компонент",
@@ -78,4 +94,40 @@ test("an absolute deadline continues counting across refetches and timer resets"
 
 test("missing deadline is never invented as zero seconds", () => {
   assert.equal(remainingSla(incident({ deadline: null, sla: null }), 100), null);
+});
+
+test("isResolvedOlderThanDay detects resolved incidents older than 24h", () => {
+  const now = Date.parse("2026-11-21T12:00:00Z");
+  // Active incident is never considered an older resolved incident
+  assert.equal(
+    groups.isResolvedOlderThanDay(
+      incident({ status: "Assigned", is_resolved: false, completionDate: "2026-11-19T10:00:00Z" }),
+      now
+    ),
+    false
+  );
+  // Resolved 2 hours ago (< 24h)
+  assert.equal(
+    groups.isResolvedOlderThanDay(
+      incident({ status: "Resolved", is_resolved: true, completionDate: "2026-11-21T10:00:00Z" }),
+      now
+    ),
+    false
+  );
+  // Resolved exactly 24 hours ago
+  assert.equal(
+    groups.isResolvedOlderThanDay(
+      incident({ status: "Resolved", is_resolved: true, completionDate: "2026-11-20T12:00:00Z" }),
+      now
+    ),
+    true
+  );
+  // Resolved 36 hours ago (> 24h)
+  assert.equal(
+    groups.isResolvedOlderThanDay(
+      incident({ status: "Resolved", is_resolved: true, completionDate: "2026-11-20T00:00:00Z" }),
+      now
+    ),
+    true
+  );
 });

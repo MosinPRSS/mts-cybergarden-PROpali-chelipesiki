@@ -5,6 +5,7 @@ import {
   DistributionMode,
   AlertBannerState,
   LiveStatusState,
+  NotificationItem,
 } from "./types";
 import { SIGNIFICANCE_ORDER } from "./data";
 import {
@@ -13,10 +14,15 @@ import {
   getPrimaryGroup,
   playChime,
   fetchIncidents,
+  resolveIncident,
   normalizeIncident,
   remainingSla,
   isIncidentActive,
   isIncidentResolved,
+  loadNotifications,
+  saveNotifications,
+  createNotification,
+  seedInitialNotifications,
 } from "./lib";
 import { Icon, AlertBanner, LiveToast } from "./components/common";
 import { Sidebar, Header } from "./components/layout";
@@ -37,12 +43,18 @@ export function App() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [liveStatus, setLiveStatus] = useState<LiveStatusState | null>(null);
   const [alertBanner, setAlertBanner] = useState<AlertBannerState | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(() => loadNotifications());
 
   // 'significant': раскидывать строго по самой значимой группе
   // 'multi': отображать карточку во всех группах одновременно
   const [distributionMode, setDistributionMode] = useState<DistributionMode>("multi");
 
   const prevIncidentsRef = useRef<Map<string, Incident>>(new Map());
+
+  // Save notifications to localStorage
+  useEffect(() => {
+    saveNotifications(notifications);
+  }, [notifications]);
 
   // SLA countdown timer
   useEffect(() => {
@@ -74,6 +86,15 @@ export function App() {
           const map = new Map<string, Incident>();
           data.forEach((item) => map.set(item.id, item));
           prevIncidentsRef.current = map;
+
+          setNotifications((prev) => {
+            if (prev.length === 0) {
+              const seeded = seedInitialNotifications(data);
+              saveNotifications(seeded);
+              return seeded;
+            }
+            return prev;
+          });
         }
       })
       .catch((err) => {
@@ -117,24 +138,57 @@ export function App() {
 
               if (newCritical) {
                 playChime("critical");
+                const text = `🚨 Новый критический инцидент ${newCritical.id} (${newCritical.service})! Требует немедленной реакции.`;
                 setAlertBanner({
                   type: "critical",
-                  text: `🚨 Новый критический инцидент ${newCritical.id} (${newCritical.service})! Требует немедленной реакции.`,
+                  text,
                 });
+                setNotifications((prev) => [
+                  createNotification({
+                    type: "critical",
+                    title: "Критический инцидент",
+                    message: text,
+                    incidentId: newCritical.id,
+                    service: newCritical.service,
+                  }),
+                  ...prev,
+                ]);
                 setTimeout(() => setAlertBanner(null), 8000);
               } else if (newlyAssigned) {
                 playChime("assigned");
+                const text = `👤 Инцидент ${newlyAssigned.id} (${newlyAssigned.service}) передан в группу координаторов!`;
                 setAlertBanner({
                   type: "assigned",
-                  text: `👤 Инцидент ${newlyAssigned.id} (${newlyAssigned.service}) передан в группу координаторов!`,
+                  text,
                 });
+                setNotifications((prev) => [
+                  createNotification({
+                    type: "assigned",
+                    title: "Передано координаторам",
+                    message: text,
+                    incidentId: newlyAssigned.id,
+                    service: newlyAssigned.service,
+                  }),
+                  ...prev,
+                ]);
                 setTimeout(() => setAlertBanner(null), 7000);
               } else if (newlyResolved) {
                 playChime("assigned");
+                const text = `✅ Инцидент ${newlyResolved.id} решён. Статус: ${newlyResolved.state || newlyResolved.status}.`;
                 setAlertBanner({
                   type: "resolved",
-                  text: `✅ Инцидент ${newlyResolved.id} решён. Статус: ${newlyResolved.state || newlyResolved.status}.`,
+                  text,
                 });
+                setNotifications((prev) => [
+                  createNotification({
+                    type: "resolved",
+                    title: "Инцидент решён",
+                    message: text,
+                    incidentId: newlyResolved.id,
+                    service: newlyResolved.service,
+                  }),
+                  ...prev,
+                ]);
                 setTimeout(() => setAlertBanner(null), 6000);
               }
             }
@@ -181,6 +235,95 @@ export function App() {
   const slaFor = useCallback(
     (incident: Incident) => remainingSla(incident, secondsPassed),
     [secondsPassed]
+  );
+
+  const handleResolve = useCallback(async (incident: Incident) => {
+    try {
+      await resolveIncident(incident.id);
+      playChime("assigned");
+      const text = `✅ Инцидент ${incident.id} (${incident.service}) успешно отмечен как решённый!`;
+      setAlertBanner({
+        type: "resolved",
+        text,
+      });
+      setNotifications((prev) => [
+        createNotification({
+          type: "resolved",
+          title: "Инцидент решён вручную",
+          message: text,
+          incidentId: incident.id,
+          service: incident.service,
+        }),
+        ...prev,
+      ]);
+      setTimeout(() => setAlertBanner(null), 6000);
+
+      // Локальное оптимистичное обновление
+      const nowIso = new Date().toISOString();
+      setIncidents((prev) =>
+        prev.map((item) =>
+          item.id === incident.id
+            ? {
+                ...item,
+                status: "Resolved",
+                state: "Решён",
+                is_resolved: true,
+                is_active: false,
+                completionDate: nowIso,
+                updated: nowIso,
+              }
+            : item
+        )
+      );
+      setSelected((prev) =>
+        prev && prev.id === incident.id
+          ? {
+              ...prev,
+              status: "Resolved",
+              state: "Решён",
+              is_resolved: true,
+              is_active: false,
+              completionDate: nowIso,
+              updated: nowIso,
+            }
+          : prev
+      );
+    } catch (err) {
+      console.error("Failed to resolve incident:", err);
+      setAlertBanner({
+        type: "critical",
+        text: `Не удалось отметить инцидент ${incident.id} как решённый. Проверьте подключение к серверу.`,
+      });
+      setTimeout(() => setAlertBanner(null), 5000);
+    }
+  }, []);
+
+  const handleMarkAsRead = useCallback((id: string) => {
+    setNotifications((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, read: true } : item))
+    );
+  }, []);
+
+  const handleMarkAllAsRead = useCallback(() => {
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })));
+  }, []);
+
+  const handleDeleteNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handleClearAllNotifications = useCallback(() => {
+    setNotifications([]);
+  }, []);
+
+  const handleSelectIncidentById = useCallback(
+    (incidentId: string) => {
+      const found = incidents.find((item) => item.id === incidentId);
+      if (found) {
+        setSelected(found);
+      }
+    },
+    [incidents]
   );
 
   const filtered = useMemo(
@@ -314,6 +457,12 @@ export function App() {
           onQueryChange={setQuery}
           theme={theme}
           onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
+          notifications={notifications}
+          onMarkAsRead={handleMarkAsRead}
+          onMarkAllAsRead={handleMarkAllAsRead}
+          onDeleteNotification={handleDeleteNotification}
+          onClearAllNotifications={handleClearAllNotifications}
+          onSelectIncident={handleSelectIncidentById}
         />
 
         <div className="content">
@@ -392,6 +541,7 @@ export function App() {
                     items={items}
                     slaFor={slaFor}
                     onSelectIncident={setSelected}
+                    onResolveIncident={handleResolve}
                   />
                 );
               })}
@@ -406,6 +556,7 @@ export function App() {
           incident={selected}
           seconds={slaFor(selected)}
           onClose={() => setSelected(null)}
+          onResolve={handleResolve}
         />
       )}
 

@@ -1,13 +1,62 @@
+import { useEffect, useRef, useState } from "react";
+import { NotificationItem } from "../../types";
 import { Icon } from "../common/Icon";
+import { NotificationHistory } from "./NotificationHistory";
 
 interface HeaderProps {
   query: string;
   onQueryChange: (q: string) => void;
   theme: "dark" | "light";
   onThemeToggle: () => void;
+  notifications: NotificationItem[];
+  onMarkAsRead: (id: string) => void;
+  onMarkAllAsRead: () => void;
+  onDeleteNotification: (id: string) => void;
+  onClearAllNotifications: () => void;
+  onSelectIncident?: (incidentId: string) => void;
 }
 
-export function Header({ query, onQueryChange, theme, onThemeToggle }: HeaderProps) {
+export function Header({
+  query,
+  onQueryChange,
+  theme,
+  onThemeToggle,
+  notifications,
+  onMarkAsRead,
+  onMarkAllAsRead,
+  onDeleteNotification,
+  onClearAllNotifications,
+  onSelectIncident,
+}: HeaderProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  const unreadCount = notifications.filter((item) => !item.read).length;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
   return (
     <header className="topbar">
       <div className="mobile-brand">
@@ -41,10 +90,33 @@ export function Header({ query, onQueryChange, theme, onThemeToggle }: HeaderPro
           <Icon name={theme === "dark" ? "sun" : "moon"} />
         </button>
 
-        <button className="icon-button notification" aria-label="Уведомления">
-          <Icon name="bell" />
-          <i />
-        </button>
+        <div className="notification-wrapper" ref={popoverRef}>
+          <button
+            className={`icon-button notification ${unreadCount > 0 ? "has-unread" : ""} ${isOpen ? "active" : ""}`}
+            onClick={() => setIsOpen((prev) => !prev)}
+            aria-label="Уведомления"
+            aria-expanded={isOpen}
+            title={unreadCount > 0 ? `Уведомления (${unreadCount} непрочитанных)` : "Уведомления"}
+          >
+            <Icon name="bell" />
+            {unreadCount > 0 && <i />}
+          </button>
+
+          {isOpen && (
+            <NotificationHistory
+              notifications={notifications}
+              onClose={() => setIsOpen(false)}
+              onMarkAsRead={onMarkAsRead}
+              onMarkAllAsRead={onMarkAllAsRead}
+              onDelete={onDeleteNotification}
+              onClearAll={onClearAllNotifications}
+              onSelectIncident={(incidentId) => {
+                onSelectIncident?.(incidentId);
+                setIsOpen(false);
+              }}
+            />
+          )}
+        </div>
       </div>
     </header>
   );

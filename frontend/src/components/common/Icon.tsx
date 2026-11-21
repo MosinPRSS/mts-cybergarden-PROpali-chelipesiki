@@ -57,6 +57,7 @@ export function Icon({ name, size = 18, className = "" }: IconProps) {
     moon: <path d="M20.5 15.1A9 9 0 0 1 8.9 3.5 9 9 0 1 0 20.5 15.1Z" />,
     chevron: <path d="m9 18 6-6-6-6" />,
     close: <path d="M18 6 6 18M6 6l12 12" />,
+    check: <path d="M20 6 9 17l-5-5" />,
     external: (
       <>
         <path d="M15 3h6v6M10 14 21 3" />
@@ -99,6 +100,11 @@ export function Icon({ name, size = 18, className = "" }: IconProps) {
       <>
         <path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.41 0l7.3-7.3a1 1 0 0 0 0-1.41L12 2Z" />
         <circle cx="7" cy="7" r="1.5" />
+      </>
+    ),
+    trash: (
+      <>
+        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />
       </>
     ),
   };
