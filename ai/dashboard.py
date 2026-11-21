@@ -12,14 +12,18 @@ from summary import validate_request
 SYSTEM_PROMPT = """Ты помощник координатора инцидентов. Пиши кратко на русском.
 mode задаёт сценарий, а отбор и порядок incidents уже определены backend:
 SUMMARY_MODE_UPCOMING — активные инциденты со сроком строго позже as_of,
-но не более чем через 30 минут. Просроченных здесь нет. Дай краткий обзор
+но не более чем через window_minutes минут (0 означает 30). Просроченных здесь нет. Дай краткий обзор
 того, что нужно успеть решить; в highlights включи строго первые min(3, N).
 SUMMARY_MODE_OVERDUE — пакет активных по источнику записей, deadline <= as_of.
 Включи в highlights ВСЕ записи пакета. Источник может запаздывать: просрочка
 не доказывает продолжающийся сбой. Сначала рекомендуй подтвердить фактический
 статус у ответственного, затем при необходимости уточнить причину задержки
 и следующий шаг. Не утверждай, что инцидент точно не решён или самый срочный.
-Порядок — дедлайн по возрастанию, затем приоритет, влияние, дата регистрации, ID.
+Порядок для OVERDUE — сначала влияние по убыванию (4 выше 3, 2, 1),
+затем большая длительность просрочки (более ранний дедлайн), приоритет,
+дата регистрации и ID. Для UPCOMING — сначала отбор в окно window_minutes,
+затем влияние по убыванию, ближайший дедлайн, приоритет, дата регистрации и ID.
+Высокий приоритет не позволяет включать далёкий дедлайн вне этого окна.
 Сохраняй порядок, ID и границы текущего пакета. statistics и total_candidates
 относятся ко всему отбору; группы могут пересекаться, их сумму не считай
 количеством уникальных инцидентов. Не анализируй отсутствующие в пакете ID.
@@ -42,6 +46,9 @@ def validate_dashboard_request(request):
         raise ValueError("Expected as_of and at least one incident")
     if request.mode not in (pb.SUMMARY_MODE_UPCOMING, pb.SUMMARY_MODE_OVERDUE):
         raise ValueError("Unknown summary mode")
+    window_minutes = request.window_minutes or 30
+    if request.mode == pb.SUMMARY_MODE_UPCOMING and window_minutes not in (30, 60, 120, 360, 720, 1440):
+        raise ValueError("Invalid upcoming window")
     limit = 5 if request.mode == pb.SUMMARY_MODE_OVERDUE else 20
     if request.total_candidates < len(request.incidents) or len(request.incidents) > limit:
         raise ValueError("Invalid candidate count")
@@ -56,7 +63,7 @@ def validate_dashboard_request(request):
         deadline = incident.deadline.ToDatetime(tzinfo=timezone.utc)
         as_of = request.as_of.ToDatetime(tzinfo=timezone.utc)
         eligible = (deadline <= as_of if request.mode == pb.SUMMARY_MODE_OVERDUE else
-                    as_of < deadline <= as_of + timedelta(minutes=30))
+                    as_of < deadline <= as_of + timedelta(minutes=window_minutes))
         if not eligible:
             raise ValueError("Incident deadline does not match summary mode")
         if incident.id in seen:

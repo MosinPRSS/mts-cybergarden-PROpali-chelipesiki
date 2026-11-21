@@ -13,31 +13,30 @@ from ai_proto.generate_pb2_grpc import IncidentSummaryServiceStub
 from config import settings
 from domain.incidents import ACTIVE_STATES, IncidentState, incident_groups
 from models import Incident
-from schemas.summary import DashboardSummary, FocusIncident, SummaryMode
+from schemas.summary import DashboardSummary, FocusIncident, SummaryMode, SummaryWindow
 
 logger = logging.getLogger(__name__)
 
 
-UPCOMING_WINDOW = timedelta(minutes=30)
 OVERDUE_BATCH_SIZE = 5
 
 
-def priority_query(as_of: datetime, mode: SummaryMode = "upcoming"):
+def priority_query(as_of: datetime, mode: SummaryMode = "upcoming", window_minutes: SummaryWindow = 30):
     deadline = (Incident.deadline <= as_of if mode == "overdue" else
-                (Incident.deadline > as_of) & (Incident.deadline <= as_of + UPCOMING_WINDOW))
+                (Incident.deadline > as_of) & (Incident.deadline <= as_of + timedelta(minutes=window_minutes)))
     return (select(Incident).where(Incident.state_enum.in_(ACTIVE_STATES), deadline)
-            .order_by(Incident.deadline.asc(), Incident.priority_id.desc(), Incident.impact_id.desc(),
+            .order_by(Incident.impact_id.desc(), Incident.deadline.asc(), Incident.priority_id.desc(),
                       Incident.submit_date.asc(), Incident.id.asc()))
 
 
-def summary_candidates(incidents, as_of, mode: SummaryMode = "upcoming"):
+def summary_candidates(incidents, as_of, mode: SummaryMode = "upcoming", window_minutes: SummaryWindow = 30):
     def eligible(item):
         if item.state_enum not in ACTIVE_STATES or item.deadline is None:
             return False
         return (item.deadline <= as_of if mode == "overdue" else
-                as_of < item.deadline <= as_of + UPCOMING_WINDOW)
+                as_of < item.deadline <= as_of + timedelta(minutes=window_minutes))
     return sorted((item for item in incidents if eligible(item)),
-                  key=lambda item: (item.deadline, -item.priority_id, -item.impact_id, item.submit_date, item.id))
+                  key=lambda item: (-item.impact_id, item.deadline, -item.priority_id, item.submit_date, item.id))
 
 
 def focus_reason(incident: Incident, as_of: datetime, mode: SummaryMode = "upcoming") -> str:
@@ -86,10 +85,11 @@ class DashboardSummaryService:
         self._cache = {}
         self._rpc_slots = asyncio.Semaphore(2)
 
-    async def _analyze_batch(self, batch, as_of, mode, statistics, total):
+    async def _analyze_batch(self, batch, as_of, mode, statistics, total, window_minutes):
         request = pb.GenerateDashboardSummaryRequest(
             incidents=[incident_snapshot(item) for item in batch], total_candidates=total,
-            statistics=statistics, mode=pb.SUMMARY_MODE_OVERDUE if mode == "overdue" else pb.SUMMARY_MODE_UPCOMING)
+            statistics=statistics, mode=pb.SUMMARY_MODE_OVERDUE if mode == "overdue" else pb.SUMMARY_MODE_UPCOMING,
+            window_minutes=window_minutes)
         request.as_of.FromDatetime(as_of)
         expected = [item.id for item in (batch if mode == "overdue" else batch[:3])]
         try:
@@ -105,8 +105,9 @@ class DashboardSummaryService:
             logger.warning("%s summary unavailable: %s", mode, type(error).__name__)
             return None
 
-    async def summarize(self, incidents, as_of, mode: SummaryMode = "upcoming"):
-        incidents = summary_candidates(incidents, as_of, mode)
+    async def summarize(self, incidents, as_of, mode: SummaryMode = "upcoming", window_minutes: SummaryWindow = 30):
+        window_minutes = 30 if mode == "overdue" else window_minutes
+        incidents = summary_candidates(incidents, as_of, mode, window_minutes)
         names = {"Критические": "critical", "На координаторах": "coordinator",
                  "Высокий приоритет": "high", "Исследование ситуации": "research"}
         statistics = dict.fromkeys([*names.values(), "overdue"], 0)
@@ -115,15 +116,16 @@ class DashboardSummaryService:
                 statistics[names[group]] += 1
         statistics["overdue"] = len(incidents) if mode == "overdue" else 0
         if not incidents:
-            return DashboardSummary(status="empty", mode=mode,
+            return DashboardSummary(status="empty", mode=mode, window_minutes=window_minutes,
                 summary="Просроченных активных инцидентов нет." if mode == "overdue" else
-                        "Активных инцидентов со сроком в ближайшие 30 минут нет.",
+                        f"Активных инцидентов со сроком в ближайшие {window_minutes} мин. нет.",
                 highlights=[], limitations=[], total_candidates=0, analyzed_count=0,
                 as_of=as_of, statistics=statistics)
 
         key = tuple(incident_snapshot(item).SerializeToString(deterministic=True) for item in incidents)
+        cache_key = (mode, window_minutes)
         async with self._locks[mode]:
-            cached = self._cache.get(mode)
+            cached = self._cache.get(cache_key)
             if cached and cached[0] == key and time.monotonic() < cached[1]:
                 return cached[2]
             shown = incidents if mode == "overdue" else incidents[:3]
@@ -133,15 +135,15 @@ class DashboardSummaryService:
             fallback_text = ("Срок в источнике истёк. Подтвердите фактический статус у ответственного; "
                              "если инцидент актуален, уточните причину задержки и следующий шаг."
                              if mode == "overdue" else
-                             "Срок истекает в ближайшие 30 минут. Проверьте ход восстановления и ответственного.")
-            response = DashboardSummary(status="fallback", mode=mode,
+                             f"Срок истекает в ближайшие {window_minutes} мин. Проверьте ход восстановления и ответственного.")
+            response = DashboardSummary(status="fallback", mode=mode, window_minutes=window_minutes,
                 summary=(f"Просрочено по данным источника: {len(incidents)}. Сначала подтвердите актуальность статусов."
                          if mode == "overdue" else "Инциденты с ближайшими сроками решения."),
                 highlights=[FocusIncident(incident=item.to_dict(now=as_of), reason=focus_reason(item, as_of, mode),
                                           summary=fallback_text) for item in shown],
                 limitations=[], total_candidates=len(incidents), analyzed_count=0,
                 as_of=as_of, statistics=statistics)
-            results = await asyncio.gather(*(self._analyze_batch(batch, as_of, mode, statistics, len(incidents))
+            results = await asyncio.gather(*(self._analyze_batch(batch, as_of, mode, statistics, len(incidents), window_minutes)
                                              for batch in batches))
             explanations = {}
             generated = []
@@ -169,7 +171,7 @@ class DashboardSummaryService:
             if len(incidents) > len(selected):
                 response.limitations.append(f"В контексте ИИ первые {len(selected)} из {len(incidents)} инцидентов с ближайшими сроками.")
             response.limitations = list(dict.fromkeys(response.limitations))
-            self._cache[mode] = (key, time.monotonic() + (300 if response.status == "ready" else 15), response)
+            self._cache[cache_key] = (key, time.monotonic() + (300 if response.status == "ready" else 15), response)
             return response
 
 

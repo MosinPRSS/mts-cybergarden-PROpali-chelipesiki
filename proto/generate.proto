@@ -15,7 +15,8 @@ service IncidentSummaryService {
 }
 
 message GenerateDashboardSummaryRequest {
-  // SQL-порядок: дедлайн, приоритет, влияние, дата регистрации и ID.
+  // Оба режима: влияние по убыванию, дедлайн по возрастанию, приоритет.
+  // При равенстве — дата регистрации и ID. UPCOMING ограничен window_minutes.
   // UPCOMING: до 20 записей; OVERDUE: пакет до 5 записей.
   repeated IncidentSnapshot incidents = 1;
   google.protobuf.Timestamp as_of = 2;
@@ -23,6 +24,9 @@ message GenerateDashboardSummaryRequest {
   // Счётчики по всему набору, включая записи за пределами первых 20.
   map<string, int32> statistics = 4;
   SummaryMode mode = 5;
+  // UPCOMING: 30, 60, 120, 360, 720 или 1440 минут. 0 означает 30 (совместимость).
+  // OVERDUE: игнорируется.
+  int32 window_minutes = 6;
 }
 
 enum SummaryMode {

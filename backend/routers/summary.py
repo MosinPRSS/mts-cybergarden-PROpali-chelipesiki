@@ -3,6 +3,7 @@ from typing import Annotated
 
 import grpc
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BeforeValidator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,7 +11,7 @@ from core.auth import get_current_session
 from core.db import get_db
 from models import Incident
 from ai_proto import generate_pb2 as pb
-from schemas.summary import DashboardSummary, IncidentSummary, SummaryMode
+from schemas.summary import DashboardSummary, IncidentSummary, SummaryMode, SummaryWindow
 from services.dashboard_summary import dashboard_summary_service, priority_query, incident_snapshot
 from services.incident_summary import incident_summary_service, related_context
 
@@ -18,13 +19,14 @@ router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[De
 
 
 @router.get("/summary", response_model=DashboardSummary, summary="Сводка по ближайшим срокам или всем просроченным инцидентам")
-async def dashboard_summary(db: Annotated[AsyncSession, Depends(get_db)], mode: SummaryMode = "upcoming"):
+async def dashboard_summary(db: Annotated[AsyncSession, Depends(get_db)], mode: SummaryMode = "upcoming",
+                            window_minutes: Annotated[SummaryWindow, BeforeValidator(int)] = 30):
     as_of = datetime.now(timezone.utc)
-    incidents = list((await db.scalars(priority_query(as_of, mode))).all())
+    incidents = list((await db.scalars(priority_query(as_of, mode, window_minutes))).all())
     # Detach the snapshots and release the DB connection before provider latency.
     db.expunge_all()
     await db.rollback()
-    return await dashboard_summary_service.summarize(incidents, as_of, mode)
+    return await dashboard_summary_service.summarize(incidents, as_of, mode, window_minutes)
 
 
 @router.get("/{incident_id}/summary", response_model=IncidentSummary, summary="ИИ-анализ инцидента с похожими случаями")

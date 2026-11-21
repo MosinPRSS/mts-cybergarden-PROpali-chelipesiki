@@ -14,6 +14,11 @@
   align-items: center;
 }
 .ai-overview-header, .ai-focus-id, .ai-focus-meta, .ai-overview-footer { justify-content: space-between; gap: 12px; }
+.ai-overview-header { flex-wrap: wrap; }
+.ai-overview-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.ai-overview-window { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.ai-overview-window select { border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--text); font: inherit; padding: 7px 9px; cursor: pointer; }
+.ai-overview-window select:focus-visible { outline: 2px solid #a296ff; outline-offset: 3px; }
 .ai-overview-title { gap: 12px; flex-wrap: wrap; }
 .ai-overview-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: rgba(138, 116, 255, .12); color: #a296ff; border: 1px solid rgba(138, 116, 255, .18); }
 .ai-overview-kicker { font-size: 9px; font-weight: 600; letter-spacing: .12em; color: var(--muted); margin-bottom: 4px; }

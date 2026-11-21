@@ -33,6 +33,22 @@ class DashboardContractTests(unittest.TestCase):
         self.assertTrue(response.HasField("generated_at"))
         self.assertEqual(dashboard_messages(self.request)[0]["role"], "system")
 
+    def test_selected_window_validates_boundary_and_is_sent_to_model(self):
+        import json
+        for minutes in (30, 60, 120, 360, 720, 1440):
+            request = copy.deepcopy(self.request)
+            request.window_minutes = minutes
+            request.incidents[0].deadline.FromDatetime(request.as_of.ToDatetime(tzinfo=timezone.utc) + timedelta(minutes=minutes))
+            validate_dashboard_request(request)
+            self.assertEqual(json.loads(dashboard_messages(request)[1]["content"])["window_minutes"], minutes)
+            request.incidents[0].deadline.FromDatetime(request.as_of.ToDatetime(tzinfo=timezone.utc) + timedelta(minutes=minutes + 1))
+            with self.assertRaises(ValueError):
+                validate_dashboard_request(request)
+        for minutes in (-1, 31, 1441):
+            request.window_minutes = minutes
+            with self.assertRaises(ValueError):
+                validate_dashboard_request(request)
+
     def test_invalid_requests(self):
         for change in (lambda req: req.ClearField("as_of"), lambda req: req.ClearField("incidents"),
                        lambda req: setattr(req, "total_candidates", 0),

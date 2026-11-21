@@ -1,10 +1,12 @@
 import type { Incident } from "./incidents/types.ts";
 
 export type SummaryMode = "upcoming" | "overdue";
+export type SummaryWindow = 30 | 60 | 120 | 360 | 720 | 1440;
 
 export interface DashboardSummary {
   status: "ready" | "partial" | "fallback" | "empty";
   mode: SummaryMode;
+  window_minutes: SummaryWindow;
   summary: string;
   highlights: {
     incident: Incident;

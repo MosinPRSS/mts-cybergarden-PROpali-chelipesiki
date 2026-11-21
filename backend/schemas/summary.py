@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from schemas.incidents import IncidentResponse
 
 SummaryMode = Literal["upcoming", "overdue"]
+SummaryWindow = Literal[30, 60, 120, 360, 720, 1440]
 
 
 class FocusIncident(BaseModel):
@@ -18,6 +19,7 @@ class FocusIncident(BaseModel):
 class DashboardSummary(BaseModel):
     status: Literal["ready", "partial", "fallback", "empty"]
     mode: SummaryMode = "upcoming"
+    window_minutes: SummaryWindow = 30
     summary: str
     highlights: list[FocusIncident]
     limitations: list[str]

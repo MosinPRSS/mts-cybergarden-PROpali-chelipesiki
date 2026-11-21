@@ -1,5 +1,5 @@
 import type { Incident } from "../../domain/incidents/types.ts";
-import type { DashboardSummary, IncidentSummary, SummaryMode } from "../../domain/analysis.ts";
+import type { DashboardSummary, IncidentSummary, SummaryMode, SummaryWindow } from "../../domain/analysis.ts";
 import { normalizeIncident } from "./incidentMapper.ts";
 import { COORDINATOR_ACCESS_MESSAGE, notifySessionExpired } from "./authApi.ts";
 
@@ -17,8 +17,9 @@ export async function fetchIncidents(): Promise<Incident[]> {
   return data.map(normalizeIncident);
 }
 
-export async function fetchDashboardSummary(signal?: AbortSignal, mode: SummaryMode = "upcoming"): Promise<DashboardSummary> {
-  const res = await fetch(`/api/incidents/summary?mode=${mode}`, { signal, cache: "no-store" });
+export async function fetchDashboardSummary(signal?: AbortSignal, mode: SummaryMode = "upcoming", windowMinutes: SummaryWindow = 30): Promise<DashboardSummary> {
+  const windowQuery = mode === "upcoming" ? `&window_minutes=${windowMinutes}` : "";
+  const res = await fetch(`/api/incidents/summary?mode=${mode}${windowQuery}`, { signal, cache: "no-store" });
   ensureAuthorized(res);
   const data: DashboardSummary = await res.json();
   return {
