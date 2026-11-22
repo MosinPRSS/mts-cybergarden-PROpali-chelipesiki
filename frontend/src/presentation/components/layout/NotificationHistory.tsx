@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import type { NotificationItem, NotificationType } from "../../../domain/notifications/types.ts";
+import type { DesktopNotificationPermission } from "../../../application/ports.ts";
+import { useServices } from "../../../application/servicesContext.ts";
 import { formatNotificationTime } from "../../formatters.ts";
 import { Icon } from "../common/Icon";
 
@@ -24,7 +26,17 @@ export function NotificationHistory({
   onClearAll,
   onSelectIncident,
 }: NotificationHistoryProps) {
+  const { desktopNotifications } = useServices();
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
+  const [permission, setPermission] = useState<DesktopNotificationPermission>(
+    () => desktopNotifications?.getPermission() ?? "unsupported"
+  );
+
+  const handleRequestPermission = async () => {
+    if (!desktopNotifications) return;
+    const result = await desktopNotifications.requestPermission();
+    setPermission(result);
+  };
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.read).length,
@@ -102,6 +114,22 @@ export function NotificationHistory({
           <Icon name="close" size={15} />
         </button>
       </div>
+
+      {permission === "default" && (
+        <div className="notification-permission-banner">
+          <div className="notification-permission-text">
+            <span className="notification-permission-badge">🚨 Системные</span>
+            <span>Уведомления на рабочий стол и телефон при критических инцидентах</span>
+          </div>
+          <button
+            type="button"
+            className="notification-permission-btn"
+            onClick={handleRequestPermission}
+          >
+            Включить
+          </button>
+        </div>
+      )}
 
       <div className="notification-toolbar">
         <div className="notification-tabs">
@@ -239,13 +267,13 @@ export function NotificationHistory({
         )}
       </div>
 
-      {notifications.length > 0 && (
-        <div className="notification-popover-footer">
-          <span>
-            Всего: {notifications.length} · Непрочитанных: {unreadCount}
-          </span>
-        </div>
-      )}
+      <div className="notification-popover-footer">
+        <span>
+          Всего: {notifications.length} · Непрочитанных: {unreadCount}
+          {permission === "granted" && " · Системные уведомления активны"}
+          {permission === "denied" && " · Системные уведомления отключены в браузере"}
+        </span>
+      </div>
     </div>
   );
 }

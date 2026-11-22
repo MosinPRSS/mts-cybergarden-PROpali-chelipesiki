@@ -99,7 +99,7 @@ npm run preview -- --outDir /tmp/mts-pwa-build --host localhost
 Для проверки входа и инцидентов нужен backend: preview использует тот же proxy
 `/api`, что и dev, с адресом `http://backend:8000`. После проверки можно удалить
 worker и кеш через DevTools → Application → Service Workers / Storage.
-Web Push и фоновая синхронизация в эту реализацию не входят.
+Для критических инцидентов поддержаны системные уведомления браузера (Desktop / Mobile Notification API и Service Worker). В истории уведомлений предусмотрена кнопка включения системных оповещений. Фоновый Web Push при полностью закрытом браузере в эту реализацию не входит.
 
 ## Размещение карточек
 

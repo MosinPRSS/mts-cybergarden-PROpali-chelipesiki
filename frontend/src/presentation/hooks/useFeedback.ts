@@ -14,7 +14,7 @@ const connectionMessages: Record<ConnectionStatus, LiveStatusState> = {
 };
 
 export function useFeedback() {
-  const { sound } = useServices();
+  const { sound, desktopNotifications } = useServices();
   const [alertBanner, setAlertBanner] = useState<AlertBannerState | null>(null);
   const [liveStatus, setLiveStatus] = useState<LiveStatusState | null>(null);
 
@@ -34,7 +34,15 @@ export function useFeedback() {
     sound.play(first.type === "critical" ? "critical" : "assigned");
     setAlertBanner({ type: first.type as AlertBannerState["type"],
       text: first.message + (events.length > 1 ? ` Ещё событий: ${events.length - 1}. Все — в уведомлениях.` : "") });
-  }, [sound]);
+
+    const criticalEvents = events.filter((item) => item.type === "critical");
+    for (const item of criticalEvents) {
+      desktopNotifications?.notify(item.title || "Критический инцидент", {
+        body: item.message,
+        tag: `critical-${item.incidentId || item.id}`,
+      });
+    }
+  }, [sound, desktopNotifications]);
   const connectionChanged = useCallback((status: ConnectionStatus) => setLiveStatus({ ...connectionMessages[status] }), []);
   const actionFailed = useCallback(({ action, id }: IncidentActionFailure) => {
     setAlertBanner({ type: "critical", text: action === "close" ? `Не удалось закрыть ${id}. Данные могли измениться; повторите после обновления.` : action === "undo" ? `Не удалось отменить завершение ${id}: инцидент изменён или уже закрыт. Обновите данные.` : action === "resolve"

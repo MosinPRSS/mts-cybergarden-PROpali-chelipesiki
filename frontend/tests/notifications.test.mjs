@@ -7,6 +7,7 @@ import {
   incidentNotifications,
 } from "../src/domain/notifications/events.ts";
 import { loadNotifications, saveNotifications } from "../src/infrastructure/browser/notificationStorage.ts";
+import { createDesktopNotifications } from "../src/infrastructure/browser/desktopNotifications.ts";
 import { formatNotificationTime } from "../src/presentation/formatters.ts";
 
 test("a batch retains every critical, coordinator and resolution event", () => {
@@ -169,3 +170,62 @@ test("notification history is isolated between signed-in accounts", (t) => {
   assert.deepEqual(loadNotifications(1), JSON.parse(JSON.stringify([notification])));
   assert.deepEqual(loadNotifications(2), []);
 });
+
+test("desktop notifications adapter correctly handles permissions and shows only when granted", async (t) => {
+  const previousWindow = globalThis.window;
+
+  // 1. Unsupported when window.Notification is missing
+  globalThis.window = {};
+  delete globalThis.window.Notification;
+  const unsupportedAdapter = createDesktopNotifications();
+  assert.equal(unsupportedAdapter.isSupported(), false);
+  assert.equal(unsupportedAdapter.getPermission(), "unsupported");
+  assert.equal(await unsupportedAdapter.requestPermission(), "unsupported");
+
+  // 2. Supported with default permission
+  let permissionValue = "default";
+  let createdNotifications = [];
+  class MockNotification {
+    constructor(title, options) {
+      this.title = title;
+      this.options = options;
+      createdNotifications.push({ title, options });
+    }
+    static get permission() {
+      return permissionValue;
+    }
+    static async requestPermission() {
+      permissionValue = "granted";
+      return permissionValue;
+    }
+  }
+
+  globalThis.window = {
+    Notification: MockNotification,
+  };
+
+  t.after(() => {
+    globalThis.window = previousWindow;
+  });
+
+  const adapter = createDesktopNotifications();
+  assert.equal(adapter.isSupported(), true);
+  assert.equal(adapter.getPermission(), "default");
+
+  // notify does nothing when permission is default
+  adapter.notify("Тест", { body: "Текст" });
+  assert.equal(createdNotifications.length, 0);
+
+  // requestPermission asks and grants
+  const requested = await adapter.requestPermission();
+  assert.equal(requested, "granted");
+  assert.equal(adapter.getPermission(), "granted");
+
+  // notify creates notification when granted
+  adapter.notify("Критический инцидент INC-1", { body: "Сбой шлюза", tag: "critical-INC-1" });
+  assert.equal(createdNotifications.length, 1);
+  assert.equal(createdNotifications[0].title, "Критический инцидент INC-1");
+  assert.equal(createdNotifications[0].options.body, "Сбой шлюза");
+  assert.equal(createdNotifications[0].options.tag, "critical-INC-1");
+});
+

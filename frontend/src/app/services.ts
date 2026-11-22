@@ -7,10 +7,12 @@ import { playChime } from "../infrastructure/browser/audio.ts";
 import { onVisible } from "../infrastructure/browser/lifecycle.ts";
 import { registerSW } from "virtual:pwa-register";
 import { createBrowserPwa } from "../infrastructure/browser/pwa.ts";
+import { createDesktopNotifications } from "../infrastructure/browser/desktopNotifications.ts";
 
 // The composition root is the only place that chooses concrete browser adapters.
 export const browserServices: AppServices = {
   pwa: createBrowserPwa(registerSW),
+  desktopNotifications: createDesktopNotifications(),
   session: {
     current: fetchCurrentUser,
     login,

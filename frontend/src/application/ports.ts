@@ -59,8 +59,18 @@ export interface PwaGateway {
   update(): Promise<void>;
 }
 
+export type DesktopNotificationPermission = "default" | "granted" | "denied" | "unsupported";
+
+export interface DesktopNotificationGateway {
+  isSupported(): boolean;
+  getPermission(): DesktopNotificationPermission;
+  requestPermission(): Promise<DesktopNotificationPermission>;
+  notify(title: string, options?: { body?: string; tag?: string; onClick?: () => void }): void;
+}
+
 export interface AppServices {
   pwa?: PwaGateway;
+  desktopNotifications?: DesktopNotificationGateway;
   session: SessionGateway;
   incidents: IncidentGateway;
   analysis: AnalysisGateway;

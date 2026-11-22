@@ -27,6 +27,7 @@ export default defineConfig({
       ],
     },
     workbox: {
+      importScripts: ['pwa-sw-notify.js'],
       globPatterns: ['**/*.{js,css,html,png,svg,ico}'],
       navigateFallback: 'index.html',
       navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/(?:health|docs|redoc|swagger|openapi\.json)(?:\/|$)/],
@@ -39,7 +40,7 @@ export default defineConfig({
   })],
   base: './',
   build: {
-    outDir: '../backend/dashboard',
+    outDir: 'dist',
     emptyOutDir: true,
   },
   server: {
