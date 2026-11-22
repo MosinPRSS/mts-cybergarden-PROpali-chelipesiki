@@ -98,10 +98,6 @@ export function Header({
       </div>
 
       <div className="top-actions">
-        <div className="system-health">
-          <i />
-          {user.full_name}
-        </div>
 
         <button
           className="icon-button theme-toggle"
