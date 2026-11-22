@@ -13,7 +13,7 @@ COPY proto/generate.proto /tmp/proto/generate.proto
 RUN python -m grpc_tools.protoc -I /tmp/proto \
     --python_out=/app --grpc_python_out=/app /tmp/proto/generate.proto
 
-COPY ai/main.py ai/healthcheck.py ai/deepseek.py ai/summary.py ai/dashboard.py ./
+COPY ai/main.py ai/healthcheck.py ai/deepseek.py ai/summary.py ai/dashboard.py ai/teams.py ./
 
 USER 10001:10001
 EXPOSE 50051

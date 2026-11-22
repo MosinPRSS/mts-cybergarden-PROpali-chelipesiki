@@ -22,12 +22,12 @@ export function useIncidentActions(
     finally { pending.current.delete(incident.id); setSavingIds([...pending.current]); }
   }, [gateway, applySaved, onFailure]);
 
-  const assign = useCallback(async (id: string, team: string, assignee?: string) => {
+  const assign = useCallback(async (id: string, team: string, assignee?: string, selectedWithAi = false) => {
     if (pending.current.has(id)) return;
     pending.current.add(id);
     setSavingIds([...pending.current]);
     try {
-      const saved = await gateway.assign(id, team, assignee);
+      const saved = await gateway.assign(id, team, assignee, selectedWithAi);
       applySaved(saved);
       onAssigned(saved);
     } catch { onFailure({ action: "assign", id }); }

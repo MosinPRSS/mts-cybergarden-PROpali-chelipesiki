@@ -1,10 +1,17 @@
 # Контракт сводки инцидента
 
-`generate.proto` описывает unary RPC `GenerateIncidentSummary` и
-`GenerateDashboardSummary` сервиса `ai.v1.IncidentSummaryService`.
+`generate.proto` описывает unary RPC `GenerateIncidentSummary`,
+`GenerateDashboardSummary` и `RecommendIncidentTeam` сервиса `ai.v1.IncidentSummaryService`.
 Backend выступает клиентом, сервис в `ai/` — сервером. Сервер запускается через
 Docker Compose и вызывает DeepSeek по HTTP. Проверки запроса и ответа реализованы;
 выборка связанных записей остаётся задачей backend. Инструкция — в `ai/README.md`.
+
+`RecommendIncidentTeam` принимает основной снимок, `as_of` и от 1 до 30 профилей
+команд (ID, название, домен, описание, сервисы, компетенции). Возвращает один ID
+или пустую строку при отказе от выбора, короткую причину, три оценки 0..100,
+вычисленный процент соответствия и версию основного инцидента. Формула процента:
+40% продукт/сервис + 40% технические компетенции + 20% зона ответственности,
+с округлением до целого. Причина ограничена 120 символами и 16 словами.
 
 ## Что передавать
 
@@ -137,3 +144,7 @@ Research/Resolved/Closed и отсутствующий deadline в обеих с
 просроченные выше), приоритет, дата регистрации и ID. Полное число
 кандидатов и счётчики передаются в `total_candidates` и `statistics`.
 Клиент backend обновляется командой `python scripts/generate-ai-proto.py`.
+
+`RecommendTeamIncidents`: один `TeamCandidate`, до пяти `IncidentSnapshot` и
+`as_of`; ответ содержит по одному `RecommendIncidentTeamResponse` в порядке
+запроса, включая отказы (пустой `team_id`, нулевые баллы).

@@ -10,7 +10,7 @@ import { getRecommendedIncidentsForTeam } from "../../../domain/teams/matching.t
 
 interface TeamsViewProps {
   incidents: Incident[];
-  onAssignTeam?: (incidentId: string, teamName: string) => void;
+  onAssignTeam?: (incidentId: string, teamName: string, assignee?: string, selectedWithAi?: boolean) => void;
   onSelectIncident: (incident: Incident) => void;
 }
 
@@ -220,7 +220,7 @@ export function TeamsView({
           team={selectedTeamForAssign}
           incidents={incidents}
           onClose={() => setSelectedTeamForAssign(null)}
-          onAssign={onAssignTeam}
+          onAssign={(id, name, withAi) => onAssignTeam(id, name, undefined, withAi)}
           onSelectIncident={onSelectIncident}
         />
       )}

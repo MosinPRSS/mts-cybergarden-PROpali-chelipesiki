@@ -6,7 +6,7 @@ from urllib.parse import quote, urlsplit
 
 from config import settings
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum as SQLEnum, Integer, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum as SQLEnum, Integer, String, Text, false, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -57,6 +57,7 @@ class Incident(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     short_description: Mapped[str] = mapped_column(Text, nullable=False)
     assigned_group_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    team_selected_with_ai: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     assigned_employee: Mapped[str] = mapped_column(String(255), nullable=False)
     assigned_employee_login: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     initiator_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -114,6 +115,7 @@ class Incident(Base):
             "area": self.scenario_name,
             "summary": self.header,
             "team": self.assigned_group_name,
+            "team_selected_with_ai": bool(self.team_selected_with_ai),
             "assignee": self.assigned_employee,
             "affected": self.impact,
             "ai": self.ai_recommendation or "",

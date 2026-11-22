@@ -116,24 +116,6 @@ export function TeamCard({
         </div>
       </div>
 
-      {/* AI ASSISTANT RECOMMENDATIONS BANNER */}
-      {recommendations.length > 0 && (
-        <div
-          className="team-ai-banner"
-          onClick={() => onOpenAssignModal?.(team)}
-          role="button"
-          tabIndex={0}
-        >
-          <div className="team-ai-header">
-            <Icon name="spark" size={15} />
-            <b>Ассистент рекомендует ({recommendations.length})</b>
-          </div>
-          <p>
-            {recommendations[0].incident.id}: {recommendations[0].reason}
-          </p>
-        </div>
-      )}
-
       {/* CURRENTLY ASSIGNED INCIDENTS LIST */}
       <div className="team-incidents-section">
         <div className="section-title-row">

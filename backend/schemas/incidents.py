@@ -24,6 +24,7 @@ class IncidentAssignRequest(BaseModel):
     team: str = Field(description="Наименование команды, которой передаётся инцидент")
     assignee: str | None = Field(default=None, description="ФИО ответственного сотрудника")
     assignee_login: str | None = Field(default=None, description="Логин ответственного сотрудника")
+    team_selected_with_ai: bool = Field(default=False, strict=True, description="Координатор подтвердил команду из ИИ-подбора")
 
 
 class ErrorResponse(BaseModel):
@@ -40,6 +41,7 @@ class IncidentResponse(IncidentSource):
     area: str
     summary: str
     team: str
+    team_selected_with_ai: bool = Field(default=False, description="Текущая команда выбрана с помощью ИИ")
     assignee: str
     affected: str = Field(description="Исходная оценка impact, не выдуманное число клиентов")
     ai: str = Field(description="Пустая строка, пока реальный ИИ-анализ отсутствует")

@@ -47,6 +47,113 @@
         ]
       }
     },
+    "/api/incidents/recommend-for-team": {
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Recommend For Team",
+        "operationId": "recommend_for_team_api_incidents_recommend_for_team_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TeamRecommendation"
+                  },
+                  "type": "array",
+                  "title": "Response Recommend For Team Api Incidents Recommend For Team Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ]
+      }
+    },
+    "/api/incidents/{incident_id}/recommend-team": {
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Подобрать команду с ИИ по компетенциям",
+        "operationId": "recommend_team_api_incidents__incident_id__recommend_team_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamRecommendationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamRecommendation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/incidents/summary": {
       "get": {
         "tags": [
@@ -783,6 +890,12 @@
             ],
             "title": "Assignee Login",
             "description": "Логин ответственного сотрудника"
+          },
+          "team_selected_with_ai": {
+            "type": "boolean",
+            "title": "Team Selected With Ai",
+            "description": "Координатор подтвердил команду из ИИ-подбора",
+            "default": false
           }
         },
         "type": "object",
@@ -1444,6 +1557,12 @@
             "type": "string",
             "title": "Team"
           },
+          "team_selected_with_ai": {
+            "type": "boolean",
+            "title": "Team Selected With Ai",
+            "description": "Текущая команда выбрана с помощью ИИ",
+            "default": false
+          },
           "assignee": {
             "type": "string",
             "title": "Assignee"
@@ -1638,6 +1757,24 @@
         ],
         "title": "LoginRequest"
       },
+      "RecommendedTeam": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "RecommendedTeam"
+      },
       "RelatedSummary": {
         "properties": {
           "incident_id": {
@@ -1655,6 +1792,169 @@
           "contribution"
         ],
         "title": "RelatedSummary"
+      },
+      "TeamCandidate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "domain": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Domain"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Description"
+          },
+          "services": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Services"
+          },
+          "skills": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Skills"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "domain",
+          "description",
+          "services",
+          "skills"
+        ],
+        "title": "TeamCandidate"
+      },
+      "TeamFitCriteria": {
+        "properties": {
+          "product_service": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Product Service"
+          },
+          "technical_skills": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Technical Skills"
+          },
+          "responsibility": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Responsibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_service",
+          "technical_skills",
+          "responsibility"
+        ],
+        "title": "TeamFitCriteria"
+      },
+      "TeamRecommendation": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendedTeam"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "match_percent": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Match Percent"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "criteria": {
+            "$ref": "#/components/schemas/TeamFitCriteria"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "incident_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Incident Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "team",
+          "match_percent",
+          "reason",
+          "criteria",
+          "generated_at",
+          "incident_updated_at"
+        ],
+        "title": "TeamRecommendation"
+      },
+      "TeamRecommendationRequest": {
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/TeamCandidate"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Teams"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "teams"
+        ],
+        "title": "TeamRecommendationRequest"
       },
       "UserResponse": {
         "properties": {

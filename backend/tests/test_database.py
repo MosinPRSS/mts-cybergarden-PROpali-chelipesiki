@@ -26,6 +26,111 @@ from tests.helpers import ASGIConnection, authorize_test_user
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "Run python -m scripts.test_database for PostgreSQL tests")
 class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
+    async def test_team_incident_selection_reads_database_and_batches_all_eligible_incidents(self):
+        from unittest.mock import patch
+        from ai_proto import generate_pb2 as pb
+        from tests.test_team_recommendation import CANDIDATES, routing_response
+        from services.team_recommendation import validate_recommendation
+
+        await self.seed()
+        await self.auth_request(f'/api/incidents/{self.records[0]["id"]}/assign', method="POST",
+            data={"team": "Digital Platform"})
+        await self.auth_request(f'/api/incidents/{self.records[1]["id"]}/assign', method="POST",
+            data={"team": "Other", "team_selected_with_ai": True})
+        async with self.sessions() as db:
+            expected = set((await db.scalars(select(Incident.id).where(
+                Incident.state_enum.in_([IncidentState.ASSIGNED, IncidentState.WORK_IN_PROGRESS, IncidentState.RESEARCH]),
+                Incident.assigned_group_name != "Digital Platform", Incident.team_selected_with_ai.is_(False)))).all())
+        seen = []
+        async def generate(request):
+            self.assertLessEqual(len(request.incidents), 5)
+            seen.extend(item.id for item in request.incidents)
+            return [validate_recommendation(child, routing_response(child)) for child in [
+                pb.RecommendIncidentTeamRequest(incident=item, teams=[request.team], as_of=request.as_of)
+                for item in request.incidents]]
+        with patch("routers.summary.team_incident_service.recommend", new=generate):
+            status, _, result = await self.auth_request("/api/incidents/recommend-for-team", method="POST", data=CANDIDATES[0])
+        self.assertEqual(status, 200)
+        self.assertEqual(set(seen), expected)
+        self.assertEqual({item["incident_id"] for item in result}, expected)
+        self.assertTrue(all(item["match_percent"] == 86 for item in result))
+
+    async def test_confirmed_ai_team_survives_reload_and_blocks_regeneration_until_reassigned(self):
+        from unittest.mock import AsyncMock, patch
+        from tests.test_team_recommendation import CANDIDATES
+
+        await self.seed()
+        identifier = self.records[0]["id"]
+        path = f"/api/incidents/{identifier}"
+        status, _, saved = await self.auth_request(path + "/assign", method="POST",
+            data={"team": "Digital Platform", "team_selected_with_ai": True})
+        self.assertEqual(status, 200)
+        self.assertTrue(saved["team_selected_with_ai"])
+        self.assertTrue((await self.auth_request(path))[2]["team_selected_with_ai"])
+        with patch("routers.summary.team_recommendation_service.recommend", new=AsyncMock()) as provider:
+            status, _, error = await self.auth_request(path + "/recommend-team", method="POST", data={"teams": CANDIDATES})
+        self.assertEqual(status, 409)
+        self.assertEqual(error["detail"], "Команда уже выбрана с помощью ИИ.")
+        provider.assert_not_awaited()
+
+        # A source update with the same team retains the confirmation.
+        raw = (await self.auth_request(path + "/source"))[2]
+        self.assertNotIn("team_selected_with_ai", raw)
+        raw["header"] += " — уточнение"
+        async with self.sessions.begin() as db:
+            await import_incidents(db, [raw])
+        await self.seed()
+        self.assertTrue((await self.auth_request(path))[2]["team_selected_with_ai"])
+
+        # Manual selection clears the marker, including confirmation of the same team.
+        status, _, saved = await self.auth_request(path + "/assign", method="POST", data={"team": "Digital Platform"})
+        self.assertEqual(status, 200)
+        self.assertFalse(saved["team_selected_with_ai"])
+        await self.auth_request(path + "/assign", method="POST",
+            data={"team": "Digital Platform", "team_selected_with_ai": True})
+        raw = (await self.auth_request(path + "/source"))[2]
+        raw["assignedGroupName"] = "Другая команда из ITSM"
+        async with self.sessions.begin() as db:
+            await import_incidents(db, [raw])
+        self.assertFalse((await self.auth_request(path))[2]["team_selected_with_ai"])
+
+    async def test_ai_selection_migration_preserves_existing_incidents(self):
+        await self.seed()
+        await self.migrate("downgrade", "0006")
+        await self.migrate("upgrade", "head")
+        async with self.sessions() as db:
+            incidents = (await db.scalars(select(Incident))).all()
+            self.assertEqual(len(incidents), len(self.retained_records))
+            self.assertTrue(all(item.team_selected_with_ai is False for item in incidents))
+
+    async def test_team_recommendation_uses_current_database_version_without_assigning(self):
+        from unittest.mock import AsyncMock, patch
+        from services.team_recommendation import TeamRecommendationService
+        from tests.test_team_recommendation import CANDIDATES, routing_response
+
+        await self.seed()
+        identifier = self.records[0]["id"]
+        path = f"/api/incidents/{identifier}/recommend-team"
+
+        async def changed_during_analysis(request):
+            self.assertEqual(request.incident.header, self.records[0]["header"])
+            await self.auth_request(f"/api/incidents/{identifier}/assign", method="POST", data={"team": "Исполнители"})
+            return routing_response(request)
+
+        with patch("services.team_recommendation.recommend_incident_team", new=changed_during_analysis), \
+             patch("routers.summary.team_recommendation_service", new=TeamRecommendationService()):
+            status, _, _ = await self.auth_request(path, method="POST", data={"teams": CANDIDATES})
+        self.assertEqual(status, 409)
+
+        with patch("services.team_recommendation.recommend_incident_team", new=AsyncMock(side_effect=routing_response)), \
+             patch("routers.summary.team_recommendation_service", new=TeamRecommendationService()):
+            status, _, result = await self.auth_request(path, method="POST", data={"teams": CANDIDATES})
+        self.assertEqual(status, 200)
+        self.assertEqual(result["team"]["name"], "Digital Platform")
+        self.assertEqual(result["match_percent"], 86)
+        async with self.sessions() as db:
+            self.assertEqual((await db.get(Incident, identifier)).assigned_group_name, "Исполнители")
+
     async def assert_serialized_actions(self, first_path, second_path, *, first_data=None,
                                         second_data=None, expected_state="Resolved", expected_team="Исполнители"):
         from unittest.mock import patch
@@ -286,7 +391,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             )
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
         self.assertEqual(differences, [])
-        self.assertEqual(revision, "0006")
+        self.assertEqual(revision, "0007")
 
     async def test_import_preserves_all_original_fields_without_creating_accounts(self):
         self.assertEqual(await self.seed(), {"incidents_created": 44, "incidents_updated": 0, "incidents_unchanged": 0})

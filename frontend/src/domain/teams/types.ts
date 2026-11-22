@@ -21,3 +21,22 @@ export interface Team {
   shiftSchedule: string;
   channel: string;
 }
+
+export interface TeamCandidate {
+  id: string;
+  name: string;
+  domain: string;
+  description: string;
+  services: string[];
+  skills: string[];
+}
+
+export interface TeamRecommendation {
+  incident_id: string;
+  team: { id: string; name: string } | null;
+  match_percent: number;
+  reason: string;
+  criteria: { product_service: number; technical_skills: number; responsibility: number };
+  generated_at: string;
+  incident_updated_at: string;
+}

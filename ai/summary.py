@@ -153,6 +153,38 @@ class IncidentSummaryService(generate_pb2_grpc.IncidentSummaryServiceServicer):
     def __init__(self, client: DeepSeekClient):
         self.client = client
 
+    async def RecommendTeamIncidents(self, request, context):
+        from teams import batch_requests, batch_messages, batch_response
+        try:
+            children = batch_requests(request)
+        except ValueError:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid team incident batch")
+        try:
+            result = await self.client.complete(batch_messages(children), timeout=context.time_remaining())
+        except DeepSeekError as error:
+            await context.abort(error.code, str(error))
+        try:
+            return batch_response(children, result)
+        except ValueError:
+            await context.abort(grpc.StatusCode.DATA_LOSS, "Invalid team incident recommendations")
+
+    async def RecommendIncidentTeam(self, request, context):
+        from teams import validate_team_request, team_messages, team_response
+
+        try:
+            validate_team_request(request)
+        except ValueError:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Invalid incident or team candidates")
+        try:
+            result = await self.client.complete(team_messages(request), timeout=context.time_remaining())
+        except DeepSeekError as error:
+            logger.warning("Team recommendation provider error: %s", error.code.name)
+            await context.abort(error.code, str(error))
+        try:
+            return team_response(request, result)
+        except ValueError:
+            await context.abort(grpc.StatusCode.DATA_LOSS, "Invalid team recommendation")
+
     async def GenerateDashboardSummary(self, request, context):
         from dashboard import validate_dashboard_request, dashboard_messages, dashboard_response
 

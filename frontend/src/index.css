@@ -3404,3 +3404,11 @@ button:disabled { opacity: .55; cursor: wait; }
 .light .ai-focus-card.overdue .ai-focus-reason { color: #96611d; }
 .ai-focus-review { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; margin-top: 10px; color: var(--muted); font-size: 11px; }
 @media (max-width: 900px) { .ai-overview-overdue .ai-overview-grid { grid-template-columns: 1fr; } }
+
+.team-fit-result { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.team-fit-result > b { color: #c2a3ff; font-size: 18px; }
+.team-fit-criteria { margin: 8px 0 12px; color: var(--muted); font-size: 12px; }
+.team-fit-criteria summary { cursor: pointer; }
+.team-fit-criteria div { margin-top: 6px; }
+.team-fit-criteria small { color: var(--muted); }
+.team-fit-request { margin-top: 10px; }

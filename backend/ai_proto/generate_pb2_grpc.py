@@ -35,6 +35,11 @@ class IncidentSummaryServiceStub:
         Args:
             channel: A grpc.Channel.
         """
+        self.RecommendTeamIncidents = channel.unary_unary(
+                '/ai.v1.IncidentSummaryService/RecommendTeamIncidents',
+                request_serializer=generate__pb2.RecommendTeamIncidentsRequest.SerializeToString,
+                response_deserializer=generate__pb2.RecommendTeamIncidentsResponse.FromString,
+                _registered_method=True)
         self.GenerateIncidentSummary = channel.unary_unary(
                 '/ai.v1.IncidentSummaryService/GenerateIncidentSummary',
                 request_serializer=generate__pb2.GenerateIncidentSummaryRequest.SerializeToString,
@@ -45,11 +50,22 @@ class IncidentSummaryServiceStub:
                 request_serializer=generate__pb2.GenerateDashboardSummaryRequest.SerializeToString,
                 response_deserializer=generate__pb2.GenerateDashboardSummaryResponse.FromString,
                 _registered_method=True)
+        self.RecommendIncidentTeam = channel.unary_unary(
+                '/ai.v1.IncidentSummaryService/RecommendIncidentTeam',
+                request_serializer=generate__pb2.RecommendIncidentTeamRequest.SerializeToString,
+                response_deserializer=generate__pb2.RecommendIncidentTeamResponse.FromString,
+                _registered_method=True)
 
 
 class IncidentSummaryServiceServicer:
     """Данные передаёт backend.
     """
+
+    def RecommendTeamIncidents(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def GenerateIncidentSummary(self, request, context):
         """Сводка одного инцидента.
@@ -65,9 +81,21 @@ class IncidentSummaryServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RecommendIncidentTeam(self, request, context):
+        """Выбрать команду из переданного реестра по данным инцидента.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_IncidentSummaryServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'RecommendTeamIncidents': grpc.unary_unary_rpc_method_handler(
+                    servicer.RecommendTeamIncidents,
+                    request_deserializer=generate__pb2.RecommendTeamIncidentsRequest.FromString,
+                    response_serializer=generate__pb2.RecommendTeamIncidentsResponse.SerializeToString,
+            ),
             'GenerateIncidentSummary': grpc.unary_unary_rpc_method_handler(
                     servicer.GenerateIncidentSummary,
                     request_deserializer=generate__pb2.GenerateIncidentSummaryRequest.FromString,
@@ -77,6 +105,11 @@ def add_IncidentSummaryServiceServicer_to_server(servicer, server):
                     servicer.GenerateDashboardSummary,
                     request_deserializer=generate__pb2.GenerateDashboardSummaryRequest.FromString,
                     response_serializer=generate__pb2.GenerateDashboardSummaryResponse.SerializeToString,
+            ),
+            'RecommendIncidentTeam': grpc.unary_unary_rpc_method_handler(
+                    servicer.RecommendIncidentTeam,
+                    request_deserializer=generate__pb2.RecommendIncidentTeamRequest.FromString,
+                    response_serializer=generate__pb2.RecommendIncidentTeamResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -89,6 +122,33 @@ def add_IncidentSummaryServiceServicer_to_server(servicer, server):
 class IncidentSummaryService:
     """Данные передаёт backend.
     """
+
+    @staticmethod
+    def RecommendTeamIncidents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ai.v1.IncidentSummaryService/RecommendTeamIncidents',
+            generate__pb2.RecommendTeamIncidentsRequest.SerializeToString,
+            generate__pb2.RecommendTeamIncidentsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def GenerateIncidentSummary(request,
@@ -134,6 +194,33 @@ class IncidentSummaryService:
             '/ai.v1.IncidentSummaryService/GenerateDashboardSummary',
             generate__pb2.GenerateDashboardSummaryRequest.SerializeToString,
             generate__pb2.GenerateDashboardSummaryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RecommendIncidentTeam(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ai.v1.IncidentSummaryService/RecommendIncidentTeam',
+            generate__pb2.RecommendIncidentTeamRequest.SerializeToString,
+            generate__pb2.RecommendIncidentTeamResponse.FromString,
             options,
             channel_credentials,
             insecure,

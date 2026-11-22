@@ -71,7 +71,7 @@ export const TEAMS_DATA: Team[] = [
       telegram: "@mts_digital_ops",
     },
     membersCount: 16,
-    services: ["Мой МТС", "API Gateway", "CDN", "Вебхуки", "МТС Экосистема", "Автопроматриватель TicTok"],
+    services: ["Мой МТС", "API Gateway", "CDN", "Вебхуки", "МТС Экосистема", "Автопросматриватель TicTok"],
     tags: ["API Gateway", "Frontend", "Envoy", "CDN", "Webhooks"],
     status: "on_duty",
     shiftSchedule: "08:00 - 22:00 + On-Call",

@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Incident } from "../../../domain/incidents/types.ts";
 import type { Team } from "../../../domain/teams/types.ts";
 import { Icon } from "../common/Icon";
-import { matchIncidentToTeam } from "../../../domain/teams/matching.ts";
+import { useServices } from "../../../application/servicesContext.ts";
+import type { TeamRecommendation } from "../../../domain/teams/types.ts";
 import { formatSla, getGroupBadgeClass } from "../../formatters.ts";
 import { getIncidentGroups, getPrimaryGroup, isIncidentActive } from "../../../domain/incidents/groups.ts";
 
@@ -10,11 +11,18 @@ interface AssignIncidentModalProps {
   team: Team;
   incidents: Incident[];
   onClose: () => void;
-  onAssign: (incidentId: string, teamName: string) => void;
+  onAssign: (incidentId: string, teamName: string, selectedWithAi?: boolean) => void;
   onSelectIncident?: (incident: Incident) => void;
 }
 
-export function AssignIncidentModal({
+export function AssignIncidentModal(props: AssignIncidentModalProps) {
+  const { team, incidents } = props;
+  const version = JSON.stringify([team.id, team.name, team.domain, team.description, team.services, team.tags,
+    incidents.map((item) => [item.id, item.updated, item.team_selected_with_ai]).sort()]);
+  return <IncidentSelection key={version} {...props} />;
+}
+
+function IncidentSelection({
   team,
   incidents,
   onClose,
@@ -23,6 +31,25 @@ export function AssignIncidentModal({
 }: AssignIncidentModalProps) {
   const [search, setSearch] = useState("");
   const [onlyRecommended, setOnlyRecommended] = useState(false);
+
+  const { analysis } = useServices();
+  const [results, setResults] = useState<TeamRecommendation[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
+  async function recommend() {
+    controller.current?.abort();
+    const request = new AbortController(); controller.current = request;
+    setLoading(true); setError("");
+    try {
+      const data = await analysis.recommendForTeam({ id: team.id, name: team.name, domain: team.domain,
+        description: team.description, services: team.services, skills: team.tags }, request.signal);
+      if (!request.signal.aborted) setResults(data);
+    } catch (failure) {
+      if (!request.signal.aborted) setError(failure instanceof Error ? failure.message : "ИИ-подбор недоступен.");
+    } finally { if (!request.signal.aborted) setLoading(false); }
+  }
 
   // Filter only active incidents
   const activeIncidents = useMemo(
@@ -33,18 +60,21 @@ export function AssignIncidentModal({
   // Match all active incidents against this team
   const scoredIncidents = useMemo(() => {
     return activeIncidents.map((incident) => {
-      const match = matchIncidentToTeam(incident, team);
+      const match = results?.find((item) => item.incident_id === incident.id &&
+        item.team?.id === team.id && Date.parse(item.incident_updated_at) === Date.parse(incident.updated));
       const isAlreadyOnThisTeam = incident.team === team.name;
       const isSittingOnCoordinators = getIncidentGroups(incident).includes("На координаторах");
       return {
         incident,
-        score: match.score,
-        reason: match.reason,
+        score: match?.match_percent ?? 0,
+        reason: match?.reason ?? "",
+        criteria: match?.criteria,
+        recommended: Boolean(match?.team) && !incident.team_selected_with_ai,
         isAlreadyOnThisTeam,
         isSittingOnCoordinators,
       };
     });
-  }, [activeIncidents, team]);
+  }, [activeIncidents, team, results]);
 
   // Filter and sort:
   // 1. Not already on this team
@@ -53,7 +83,7 @@ export function AssignIncidentModal({
   const filteredList = useMemo(() => {
     return scoredIncidents
       .filter((item) => {
-        if (onlyRecommended && item.score < 40) return false;
+        if (onlyRecommended && !item.recommended) return false;
         if (!search.trim()) return true;
         const q = search.toLowerCase();
         const inc = item.incident;
@@ -127,24 +157,32 @@ export function AssignIncidentModal({
           </div>
           <button
             className={`filter-pill-btn ${onlyRecommended ? "active" : ""}`}
-            onClick={() => setOnlyRecommended(!onlyRecommended)}
+            disabled={loading || team.id === "coordinators"}
+            onClick={() => { setOnlyRecommended(!onlyRecommended); if (!onlyRecommended && results === null) void recommend(); }}
           >
             <Icon name="spark" size={14} />
             Только рекомендации ассистента
           </button>
         </div>
 
+        <div className="modal-team-summary">
+          <button className="secondary-button" disabled={loading || team.id === "coordinators"} onClick={recommend}>
+            {loading ? "Подбираем инциденты…" : results ? "Обновить ИИ-подбор" : "Подобрать с ИИ"}
+          </button>
+          {error && <p role="alert">{error}</p>}
+          {results && <small>ИИ-подбор завершён. Поиск и фильтр работают без новых запросов.</small>}
+        </div>
         <div className="modal-incidents-list">
           {filteredList.length === 0 ? (
             <div className="modal-empty-state">
               <Icon name="spark" size={32} />
-              <p>Нет подходящих активных инцидентов по данному запросу</p>
+              <p>{loading ? "ИИ анализирует инциденты…" : "Нет подходящих активных инцидентов по данному запросу"}</p>
             </div>
           ) : (
-            filteredList.map(({ incident, score, reason, isAlreadyOnThisTeam }) => {
+            filteredList.map(({ incident, score, reason, criteria, recommended, isAlreadyOnThisTeam }) => {
               const primaryGroup = getPrimaryGroup(incident);
               const badgeClass = getGroupBadgeClass(primaryGroup);
-              const isRecommended = score >= 50;
+              const isRecommended = recommended;
 
               return (
                 <div
@@ -168,7 +206,7 @@ export function AssignIncidentModal({
                       <button
                         className="assign-confirm-btn"
                         onClick={() => {
-                          onAssign(incident.id, team.name);
+                          onAssign(incident.id, team.name, isRecommended);
                           onClose();
                         }}
                       >
@@ -199,9 +237,14 @@ export function AssignIncidentModal({
                     <div className="ai-suggestion-box">
                       <div className="ai-suggestion-header">
                         <Icon name="spark" size={14} />
-                        <b>Совпадение компетенций: {score} из 100</b>
+                        <b>Соответствие по оценке ИИ: {score}%</b>
                       </div>
                       <p>{reason}</p>
+                      {criteria && <details className="team-fit-criteria"><summary>Критерии</summary>
+                        <div>Продукт/сервис: {criteria.product_service}% · вес 40%</div>
+                        <div>Компетенции: {criteria.technical_skills}% · вес 40%</div>
+                        <div>Ответственность: {criteria.responsibility}% · вес 20%</div>
+                      </details>}
                     </div>
                   )}
                 </div>
@@ -211,7 +254,6 @@ export function AssignIncidentModal({
         </div>
 
         <div className="modal-footer">
-          <span>На сайте 1 роль — Координатор с полным доступом к назначению команд</span>
           <button className="secondary-button" onClick={onClose}>
             Закрыть
           </button>

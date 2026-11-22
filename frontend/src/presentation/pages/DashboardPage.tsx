@@ -78,7 +78,7 @@ export function DashboardPage({ user, onLogout, signingOut }: {
     </main>
     {selected && <Drawer key={selected.id} incident={selected} seconds={slaFor(selected)} onClose={closeDrawer}
       onSelectRelated={selectById} saving={actions.savingIds.includes(selected.id)}
-      onResolve={actions.resolve} onAssignTeam={actions.assign} />}
+      onResolve={actions.resolve} onAssignTeam={(id, team, selectedWithAi) => actions.assign(id, team, undefined, selectedWithAi)} />}
     <AlertBanner banner={feedback.alertBanner} onClose={feedback.dismissAlert} />
     <LiveToast status={feedback.liveStatus} />
   </div>;

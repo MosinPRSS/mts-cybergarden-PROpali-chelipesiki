@@ -5,6 +5,7 @@ export interface Incident {
   area: string;
   summary: string;
   team: string;
+  team_selected_with_ai?: boolean;
   assignee?: string;
   sla: number | null;
   productName?: string;

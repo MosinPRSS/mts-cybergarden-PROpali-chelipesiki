@@ -4,7 +4,7 @@ import { formatSla, getGroupBadgeClass } from "../../formatters.ts";
 import { getIncidentGroups, getPrimaryGroup, isIncidentResolved } from "../../../domain/incidents/groups.ts";
 import { Icon } from "../common/Icon";
 import { TEAMS_DATA } from "../../../data/teams";
-import { getRecommendedTeamsForIncident } from "../../../domain/teams/matching.ts";
+import { TeamRecommendationPanel } from "../teams/TeamRecommendationPanel.tsx";
 import { IncidentAnalysis } from "./IncidentAnalysis";
 
 interface DrawerProps {
@@ -12,7 +12,7 @@ interface DrawerProps {
   seconds: number | null;
   onClose: () => void;
   onResolve?: (incident: Incident) => void;
-  onAssignTeam?: (incidentId: string, teamName: string) => void;
+  onAssignTeam?: (incidentId: string, teamName: string, selectedWithAi?: boolean) => void;
   onSelectRelated?: (id: string) => void;
   saving?: boolean;
 }
@@ -23,8 +23,6 @@ export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam, on
   const groups = getIncidentGroups(incident);
   const primary = getPrimaryGroup(incident);
 
-  const recommendations = getRecommendedTeamsForIncident(incident, TEAMS_DATA);
-  const topRecommendation = recommendations.length > 0 ? recommendations[0] : null;
   return (
     <div className="drawer-layer">
       <button className="drawer-backdrop" onClick={onClose} aria-label="Закрыть панель" />
@@ -54,6 +52,8 @@ export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam, on
           </section>
           <section className="drawer-section">
             <IncidentAnalysis key={`${incident.id}:${incident.updated}`} incident={incident} onSelectRelated={onSelectRelated} />
+          </section>
+          <section className="drawer-section">
             <div className="section-title"><h3>Описание инцидента</h3></div>
             <p>{incident.description || incident.summary}</p>
             {incident.sourceService && <p>Сервис: {incident.sourceService}</p>}
@@ -76,29 +76,13 @@ export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam, on
               </div>
             </div>
 
-            {/* AI Assistant recommendation for incident assignment */}
-            {topRecommendation && topRecommendation.team.name !== incident.team && (!isIncidentResolved(incident) || incident.status === "Research") && onAssignTeam && (
-              <div className="drawer-ai-rec-box">
-                <div className="ai-rec-title">
-                  <Icon name="spark" size={14} />
-                  <span>Подбор команды по компетенциям:</span>
-                </div>
-                <div className="ai-rec-body">
-                  <strong>{topRecommendation.team.name}</strong>
-                  <p>{topRecommendation.reason}</p>
-                  <button
-                    className="ai-rec-assign-btn"
-                    disabled={saving}
-                    onClick={() => {
-                      onAssignTeam(incident.id, topRecommendation.team.name);
-                    }}
-                  >
-                    <Icon name="check" size={13} />
-                    Назначить рекомендованную команду
-                  </button>
-                </div>
-              </div>
-            )}
+            {incident.team_selected_with_ai ?
+              <div className="drawer-ai-rec-box" aria-label="ИИ-подбор команды">
+                <div className="ai-rec-title"><Icon name="check" size={14} /><span>Выбрано с помощью ИИ</span></div>
+                <div className="ai-rec-body"><strong>{incident.team}</strong></div>
+              </div> : (!isIncidentResolved(incident) || incident.status === "Research") && onAssignTeam &&
+              <TeamRecommendationPanel key={`${incident.id}:${incident.updated}`} incident={incident}
+                saving={saving} onAssign={onAssignTeam} />}
 
             {/* Reassign Team Selector for Coordinator */}
             {(!isIncidentResolved(incident) || incident.status === "Research") && onAssignTeam && (

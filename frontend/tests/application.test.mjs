@@ -21,6 +21,7 @@ const { useSession } = await load("application/auth/useSession.ts");
 const { useDashboardSummary } = await load("application/analysis/useDashboardSummary.ts");
 const { AiOverview } = await load("presentation/components/dashboard/AiOverview.tsx");
 const { DashboardPage } = await load("presentation/pages/DashboardPage.tsx");
+const { Drawer } = await load("presentation/components/dashboard/Drawer.tsx");
 after(async () => { await vite.close(); dom.window.close(); });
 
 const now = Date.parse("2026-11-22T10:00:00Z");
@@ -128,4 +129,125 @@ test("assistant badge tracks deadline crossings and live resolutions", async (t)
   assert.equal(badge(), "1"); assert.doesNotMatch(view.container.querySelector(".page-heading").textContent, /Россия|Оперативный центр/);
   await tick(t, 1000); assert.equal(badge(), "2");
   await act(async () => observer.snapshot([{ ...rows[0], status: "Resolved", is_active: false, is_resolved: true, groups: [] }, ...rows.slice(1)])); assert.equal(badge(), "1");
+});
+
+test("the drawer requests LLM routing on demand and assigns its team rather than the CDN heuristic", async (t) => {
+  const incident = { ...row("CDN-INC", -1), updated: new Date(now).toISOString(),
+    team: "КЦ ИТ Координаторы Массовых Инцидентов", description: "Проблема с CDN" };
+  let calls = 0;
+  const assigned = [];
+  const services = defaults({ analysis: { recommendTeam: async (id, teams, signal) => {
+    calls++;
+    assert.equal(id, incident.id);
+    assert.equal(teams.length, 9);
+    assert.ok(teams.some((team) => team.id === "digital-platform"));
+    assert.ok(!teams.some((team) => team.id === "coordinators"));
+    assert.ok(teams.every((team) => !Object.hasOwn(team, "lead")));
+    assert.equal(signal.aborted, false);
+    const chosen = teams.find((team) => team.id === "infra");
+    return { incident_id: id, team: { id: chosen.id, name: chosen.name }, match_percent: 86,
+      reason: "Команда сопровождает инфраструктуру доставки контента.",
+      criteria: { product_service: 90, technical_skills: 85, responsibility: 80 },
+      generated_at: new Date(now).toISOString(), incident_updated_at: incident.updated };
+  } } });
+  const view = await render(t, createElement(Drawer, { incident, seconds: -60, onClose() {},
+    onAssignTeam: (...args) => assigned.push(args) }), services);
+  const panel = () => view.container.querySelector('[aria-label="ИИ-подбор команды"]');
+  assert.equal(calls, 0);
+  await act(async () => panel().querySelector("button").click());
+  assert.equal(calls, 1);
+  assert.match(panel().textContent, /ИТ-Инфраструктура/);
+  assert.match(panel().textContent, /86%/);
+  assert.doesNotMatch(panel().textContent, /Упоминание компонента|Digital Platform/);
+  assert.equal(panel().querySelector("details").open, false);
+  await act(async () => panel().querySelector(".ai-rec-assign-btn").click());
+  assert.deepEqual(assigned, [[incident.id, "ИТ-Инфраструктура", true]]);
+  const saved = { ...incident, team: "ИТ-Инфраструктура", team_selected_with_ai: true,
+    updated: new Date(now + 1000).toISOString() };
+  await view.update(createElement(Drawer, { incident: saved, seconds: -60, onClose() {}, onAssignTeam() {} }));
+  assert.match(panel().textContent, /Выбрано с помощью ИИ/);
+  assert.match(panel().textContent, /ИТ-Инфраструктура/);
+  assert.equal(panel().querySelector("button"), null);
+  await view.unmount();
+  const reopened = await render(t, createElement(Drawer, { incident: saved, seconds: -60, onClose() {}, onAssignTeam() {} }), services);
+  assert.match(reopened.container.textContent, /Выбрано с помощью ИИ/);
+  assert.equal(reopened.container.querySelector('[aria-label="ИИ-подбор команды"] button'), null);
+  assert.equal(calls, 1);
+});
+
+test("an AI suggestion for the current team still requires explicit confirmation", async (t) => {
+  const incident = { ...row("SAME-TEAM", -1), updated: new Date(now).toISOString(), team: "Digital Platform" };
+  const assigned = [];
+  const services = defaults({ analysis: { recommendTeam: async () => ({ incident_id: incident.id,
+    incident_updated_at: incident.updated, team: { id: "digital-platform", name: incident.team }, match_percent: 80,
+    reason: "Команда сопровождает этот сервис.", criteria: { product_service: 80, technical_skills: 80, responsibility: 80 } }) } });
+  const view = await render(t, createElement(Drawer, { incident, seconds: -60, onClose() {},
+    onAssignTeam: (...args) => assigned.push(args) }), services);
+  const panel = view.container.querySelector('[aria-label="ИИ-подбор команды"]');
+  await act(async () => panel.querySelector("button").click());
+  const confirm = panel.querySelector(".ai-rec-assign-btn");
+  assert.equal(confirm.textContent, "Подтвердить выбор ИИ");
+  assert.equal(assigned.length, 0);
+  await act(async () => confirm.click());
+  assert.deepEqual(assigned, [[incident.id, incident.team, true]]);
+  assert.doesNotMatch(panel.textContent, /Выбрано с помощью ИИ/);
+});
+
+test("an AI routing failure offers retry without enabling a heuristic assignment", async (t) => {
+  const incident = { ...row("CDN-ERROR", -1), updated: new Date(now).toISOString(), description: "Сбой CDN" };
+  const services = defaults({ analysis: { recommendTeam: async () => { throw Error("ИИ-подбор недоступен."); } } });
+  const view = await render(t, createElement(Drawer, { incident, seconds: -60, onClose() {}, onAssignTeam() {} }), services);
+  const panel = view.container.querySelector('[aria-label="ИИ-подбор команды"]');
+  await act(async () => panel.querySelector("button").click());
+  assert.match(panel.querySelector('[role="alert"]').textContent, /ИИ-подбор недоступен/);
+  assert.equal(panel.querySelector(".ai-rec-assign-btn"), null);
+  assert.equal(panel.querySelector(".team-fit-result"), null);
+  assert.equal(panel.querySelector("button").disabled, false);
+});
+
+test("updating the incident cancels an outstanding routing request and removes its result", async (t) => {
+  const incident = { ...row("CDN-CHANGED", -1), updated: new Date(now).toISOString() };
+  const pending = deferred();
+  let signal;
+  const services = defaults({ analysis: { recommendTeam: async (_id, _teams, requestSignal) => {
+    signal = requestSignal; return pending.promise;
+  } } });
+  const props = { incident, seconds: -60, onClose() {}, onAssignTeam() {} };
+  const view = await render(t, createElement(Drawer, props), services);
+  await act(async () => view.container.querySelector('[aria-label="ИИ-подбор команды"] button').click());
+  assert.equal(signal.aborted, false);
+  await view.update(createElement(Drawer, { ...props, incident: { ...incident, updated: new Date(now + 1000).toISOString() } }));
+  assert.equal(signal.aborted, true);
+  await act(async () => pending.resolve({ incident_id: incident.id, team: { id: "infra", name: "ИТ-Инфраструктура" },
+    match_percent: 100, reason: "Устаревший результат", incident_updated_at: incident.updated }));
+  const panel = view.container.querySelector('[aria-label="ИИ-подбор команды"]');
+  assert.equal(panel.querySelector(".ai-rec-assign-btn"), null);
+  assert.doesNotMatch(panel.textContent, /Устаревший результат/);
+});
+
+test("team incident AI filtering runs on demand and carries confirmation on assignment", async (t) => {
+  const { AssignIncidentModal } = await load("presentation/components/teams/AssignIncidentModal.tsx");
+  const { TEAMS_DATA } = await load("data/teams.ts");
+  const team = TEAMS_DATA.find((item) => item.id === "infra");
+  const rows = ["fits", "unrelated"].map((id) => ({ ...row(id, 10), updated: new Date(now).toISOString() }));
+  let calls = 0; const assigned = [];
+  const services = defaults({ analysis: { recommendForTeam: async (profile) => {
+    calls++; assert.equal(profile.id, team.id); assert.equal(profile.lead, undefined);
+    return [{ incident_id: "fits", incident_updated_at: rows[0].updated, team: { id: team.id, name: team.name },
+      match_percent: 86, reason: "Команда сопровождает инфраструктуру." }];
+  } } });
+  const view = await render(t, createElement(AssignIncidentModal, { team, incidents: rows,
+    onClose() {}, onAssign: (...args) => assigned.push(args) }), services);
+  assert.equal(calls, 0);
+  assert.equal(view.container.querySelector(".ai-suggestion-box"), null);
+  await act(async () => view.container.querySelector(".filter-pill-btn").click());
+  assert.equal(calls, 1);
+  assert.equal(view.container.querySelectorAll(".modal-incident-card").length, 1);
+  assert.match(view.container.textContent, /86%/);
+  await act(async () => view.container.querySelector(".filter-pill-btn").click());
+  assert.equal(view.container.querySelectorAll(".modal-incident-card").length, 2);
+  await act(async () => view.container.querySelector(".filter-pill-btn").click());
+  assert.equal(calls, 1);
+  await act(async () => view.container.querySelector(".assign-confirm-btn").click());
+  assert.deepEqual(assigned, [["fits", team.name, true]]);
 });

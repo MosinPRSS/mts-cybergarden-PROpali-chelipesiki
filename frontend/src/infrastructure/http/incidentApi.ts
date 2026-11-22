@@ -1,5 +1,6 @@
 import type { Incident } from "../../domain/incidents/types.ts";
 import type { DashboardSummary, IncidentSummary, SummaryMode, SummaryWindow } from "../../domain/analysis.ts";
+import type { TeamCandidate, TeamRecommendation } from "../../domain/teams/types.ts";
 import { normalizeIncident } from "./incidentMapper.ts";
 import { COORDINATOR_ACCESS_MESSAGE, notifySessionExpired } from "./authApi.ts";
 
@@ -40,6 +41,23 @@ export async function fetchIncidentSummary(id: string, signal?: AbortSignal): Pr
   return res.json();
 }
 
+export async function fetchTeamRecommendation(id: string, teams: TeamCandidate[], signal?: AbortSignal): Promise<TeamRecommendation> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/incidents/${encodeURIComponent(id)}/recommend-team`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teams }), signal, cache: "no-store",
+    });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new Error("Нет связи. Повторите подбор.");
+  }
+  if (res.status === 409) throw new Error("Данные изменились. Повторите подбор.");
+  if (res.status === 503) throw new Error("ИИ-подбор недоступен. Попробуйте ещё раз.");
+  ensureAuthorized(res);
+  return res.json();
+}
+
 export async function resolveIncident(id: string): Promise<Incident> {
   const res = await fetch(`/api/incidents/${encodeURIComponent(id)}/resolve`, {
     method: "POST",
@@ -52,16 +70,27 @@ export async function resolveIncident(id: string): Promise<Incident> {
 export async function assignIncident(
   id: string,
   team: string,
-  assignee?: string
+  assignee?: string,
+  selectedWithAi = false,
 ): Promise<Incident> {
   const res = await fetch(`/api/incidents/${encodeURIComponent(id)}/assign`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ team, assignee }),
+    body: JSON.stringify({ team, assignee, team_selected_with_ai: selectedWithAi }),
   });
   ensureAuthorized(res);
   const data = await res.json();
   return normalizeIncident(data);
+}
+
+export async function fetchIncidentsForTeam(team: TeamCandidate, signal?: AbortSignal): Promise<TeamRecommendation[]> {
+  const res = await fetch("/api/incidents/recommend-for-team", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(team), signal, cache: "no-store",
+  });
+  if (res.status === 409) throw new Error("Данные изменились. Повторите подбор.");
+  if (res.status === 503) throw new Error("ИИ-подбор недоступен. Попробуйте ещё раз.");
+  ensureAuthorized(res);
+  return res.json();
 }

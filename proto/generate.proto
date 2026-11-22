@@ -6,12 +6,60 @@ import "google/protobuf/timestamp.proto";
 
 // Данные передаёт backend.
 service IncidentSummaryService {
+  rpc RecommendTeamIncidents(RecommendTeamIncidentsRequest) returns (RecommendTeamIncidentsResponse);
   // Сводка одного инцидента.
   rpc GenerateIncidentSummary(GenerateIncidentSummaryRequest)
       returns (GenerateIncidentSummaryResponse);
   // Обзор наиболее важных инцидентов для главной страницы.
   rpc GenerateDashboardSummary(GenerateDashboardSummaryRequest)
       returns (GenerateDashboardSummaryResponse);
+  // Выбрать команду из переданного реестра по данным инцидента.
+  rpc RecommendIncidentTeam(RecommendIncidentTeamRequest)
+      returns (RecommendIncidentTeamResponse);
+}
+
+message RecommendTeamIncidentsRequest {
+  TeamCandidate team = 1;
+  repeated IncidentSnapshot incidents = 2;
+  google.protobuf.Timestamp as_of = 3;
+}
+
+message RecommendTeamIncidentsResponse {
+  repeated RecommendIncidentTeamResponse recommendations = 1;
+}
+
+message TeamCandidate {
+  string id = 1;
+  string name = 2;
+  string domain = 3;
+  string description = 4;
+  repeated string services = 5;
+  repeated string skills = 6;
+}
+
+message RecommendIncidentTeamRequest {
+  IncidentSnapshot incident = 1;
+  repeated TeamCandidate teams = 2;
+  google.protobuf.Timestamp as_of = 3;
+}
+
+// Оценки соответствия 0..100, не вероятности решения.
+message TeamFitCriteria {
+  int32 product_service = 1;  // Вес 40%.
+  int32 technical_skills = 2; // Вес 40%.
+  int32 responsibility = 3;   // Вес 20%.
+}
+
+message RecommendIncidentTeamResponse {
+  string incident_id = 1;
+  // Пустой ID: недостаточно данных для выбора команды.
+  string team_id = 2;
+  int32 match_percent = 3;
+  // Одно предложение, максимум 120 символов и 16 слов.
+  string reason = 4;
+  TeamFitCriteria criteria = 5;
+  google.protobuf.Timestamp generated_at = 6;
+  google.protobuf.Timestamp incident_updated_at = 7;
 }
 
 message GenerateDashboardSummaryRequest {

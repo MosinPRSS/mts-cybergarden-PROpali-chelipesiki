@@ -84,6 +84,7 @@ async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: 
 
     now = datetime.now(timezone.utc)
     incident.assigned_group_name = payload.team
+    incident.team_selected_with_ai = payload.team_selected_with_ai
     if payload.assignee:
         incident.assigned_employee = payload.assignee
     if payload.assignee_login:

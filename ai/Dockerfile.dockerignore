@@ -6,5 +6,6 @@
 !ai/deepseek.py
 !ai/summary.py
 !ai/dashboard.py
+!ai/teams.py
 !proto/
 !proto/generate.proto

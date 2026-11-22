@@ -2,7 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 
 from pydantic import TypeAdapter
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,9 +66,14 @@ async def import_incidents(session: AsyncSession, records: object, *, update_exi
             )
             stats["incidents_created" if created is not None else "incidents_unchanged"] += 1
             continue
+        updates = {key: getattr(statement.excluded, key) for key in values if key != "id"}
+        updates["team_selected_with_ai"] = case(
+            (Incident.assigned_group_name != statement.excluded.assigned_group_name, False),
+            else_=Incident.team_selected_with_ai,
+        )
         statement = statement.on_conflict_do_update(
             index_elements=[Incident.id],
-            set_={key: getattr(statement.excluded, key) for key in values if key != "id"},
+            set_=updates,
         )
         await session.execute(statement)
         stats["incidents_updated" if source.id in previous else "incidents_created"] += 1
