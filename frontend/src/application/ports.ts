@@ -42,7 +42,25 @@ export interface NotificationStorage {
   save(items: NotificationItem[], userId: number): void;
 }
 
+export interface PwaState {
+  online: boolean;
+  installAvailable: boolean;
+  iosInstallHint: boolean;
+  installed: boolean;
+  updateAvailable: boolean;
+  updating: boolean;
+  error: string;
+}
+
+export interface PwaGateway {
+  getSnapshot(): PwaState;
+  subscribe(listener: () => void): Dispose;
+  install(): Promise<void>;
+  update(): Promise<void>;
+}
+
 export interface AppServices {
+  pwa?: PwaGateway;
   session: SessionGateway;
   incidents: IncidentGateway;
   analysis: AnalysisGateway;

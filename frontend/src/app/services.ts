@@ -5,9 +5,12 @@ import { subscribeToIncidents } from "../infrastructure/browser/incidentStream.t
 import { loadNotifications, saveNotifications } from "../infrastructure/browser/notificationStorage.ts";
 import { playChime } from "../infrastructure/browser/audio.ts";
 import { onVisible } from "../infrastructure/browser/lifecycle.ts";
+import { registerSW } from "virtual:pwa-register";
+import { createBrowserPwa } from "../infrastructure/browser/pwa.ts";
 
 // The composition root is the only place that chooses concrete browser adapters.
 export const browserServices: AppServices = {
+  pwa: createBrowserPwa(registerSW),
   session: {
     current: fetchCurrentUser,
     login,

@@ -59,7 +59,7 @@ export function DashboardPage({ user, onLogout, signingOut }: {
     if (found) setSelected(found);
   }, [incidents]);
 
-  return <div className={`app ${theme}`}>
+  return <div className={`app ${theme}`} data-pwa-busy={actions.savingIds.length > 0 || actions.undoable.length > 0 || signingOut}>
     <Sidebar activeNav={activeNav} onSelectNav={(key) => { setActiveNav(key); closeMobileMenu(); }}
       mobileOpen={mobileMenuOpen} onClose={closeMobileMenu}
       criticalCount={criticalCount} overdueCount={overdueCount} user={user} />
