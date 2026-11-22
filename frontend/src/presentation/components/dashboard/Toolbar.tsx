@@ -6,6 +6,8 @@ interface ToolbarProps {
   myTeamCount: number;
   incidentView: IncidentView;
   onSetIncidentView: (view: IncidentView) => void;
+  hideOverdue: boolean;
+  onToggleHideOverdue: () => void;
 }
 
 export function Toolbar({
@@ -14,6 +16,8 @@ export function Toolbar({
   myTeamCount,
   incidentView,
   onSetIncidentView,
+  hideOverdue,
+  onToggleHideOverdue,
 }: ToolbarProps) {
   return (
     <div className="toolbar">
@@ -40,6 +44,11 @@ export function Toolbar({
           Моя команда <span>{myTeamCount}</span>
         </button>
       </div>
+      <button type="button" className={`overdue-visibility-toggle ${hideOverdue ? "active" : ""}`}
+        aria-pressed={hideOverdue} onClick={onToggleHideOverdue}
+        title="Скрывать активные инциденты с истёкшим сроком решения">
+        {hideOverdue ? "Показать просроченные" : "Скрыть просроченные"}
+      </button>
     </div>
   );
 }

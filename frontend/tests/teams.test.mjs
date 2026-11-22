@@ -112,3 +112,19 @@ test("assignment sends the AI confirmation and manual assignments clear it", asy
   assert.deepEqual(bodies, [{ team: "Digital Platform", team_selected_with_ai: true },
     { team: "Другая команда", team_selected_with_ai: false }]);
 });
+
+test("ITSM mock rosters contain external participants and consistent membership counts", () => {
+  for (const team of TEAMS_DATA) {
+    assert.equal(team.source, "itsm");
+    assert.equal(team.members.length, team.membersCount);
+    assert.ok(team.members.some((member) => member.externalId === team.lead.externalId));
+    assert.equal(new Set(team.members.map((member) => member.externalId)).size, team.members.length);
+    for (const member of team.members) {
+      assert.ok(member.externalId.startsWith("itsm:"));
+      assert.ok(member.name && member.role && member.login);
+      assert.ok(["on_duty", "on_call", "off_duty"].includes(member.availability));
+      assert.equal(Object.hasOwn(member, "password"), false);
+      assert.equal(Object.hasOwn(member, "pass_hash"), false);
+    }
+  }
+});

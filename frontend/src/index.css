@@ -154,6 +154,7 @@ button {
   border-right: 1px solid var(--line-soft);
   padding: 23px 14px 18px;
 }
+.sidebar .sidebar-close, .sidebar-backdrop { display: none; }
 
 .brand {
   display: flex;
@@ -3465,3 +3466,91 @@ button:disabled { opacity: .55; cursor: wait; }
 
 .undo-resolve-toasts { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 1500; display: grid; gap: 8px; max-width: calc(100vw - 32px); }
 .undo-resolve-toast { display: flex; align-items: center; gap: 16px; padding: 12px 16px; background: var(--surface, #101b2b); color: var(--text, #f3f5fa); border: 1px solid #54647b; border-radius: 12px; box-shadow: 0 8px 28px #0005; }
+
+/* Mobile navigation and viewport-sized notification history. */
+@media (max-width: 760px) {
+  .sidebar.is-mobile-open {
+    display: flex;
+    width: min(300px, calc(100vw - 40px));
+    padding: 20px 14px;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    z-index: 1200;
+    overflow-y: auto;
+  }
+  .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 1199; background: #0008; }
+  .sidebar.is-mobile-open .brand { padding: 0 4px 24px; gap: 10px; }
+  .sidebar.is-mobile-open .brand-copy,
+  .sidebar.is-mobile-open nav span,
+  .sidebar.is-mobile-open .operator div { display: block; }
+  .sidebar.is-mobile-open .sidebar-close { display: grid; margin-left: auto; flex-shrink: 0; }
+  .sidebar.is-mobile-open nav button { justify-content: flex-start; min-height: 44px; }
+  .sidebar.is-mobile-open nav button b { position: static; margin: 0 0 0 auto; min-width: 22px; height: 20px; font-size: 11px; }
+  .sidebar.is-mobile-open .operator { justify-content: flex-start; }
+  .sidebar.is-mobile-open .operator b { overflow: hidden; text-overflow: ellipsis; }
+  .mobile-brand { flex-shrink: 0; }
+  .mobile-brand .brand-mark { flex-shrink: 0; }
+  .topbar .top-actions { margin-left: auto; gap: 6px; }
+  .topbar { backdrop-filter: none; background: var(--bg); }
+  .notification-popover {
+    position: fixed;
+    top: 108px;
+    left: max(8px, env(safe-area-inset-left));
+    right: max(8px, env(safe-area-inset-right));
+    width: auto;
+    max-height: calc(100vh - 124px);
+    max-height: calc(100dvh - 124px - env(safe-area-inset-bottom));
+  }
+  .notification-popover-header, .notification-toolbar, .notification-popover-footer { flex-shrink: 0; }
+  .notification-popover-header { padding: 12px; gap: 8px; }
+  .notification-title-wrap { min-width: 0; }
+  .notification-title-row { flex-wrap: wrap; gap: 6px; }
+  .notification-title-row h3 { font-size: 13px; }
+  .notification-close-btn { flex-shrink: 0; }
+  .notification-toolbar { padding: 8px; }
+  .notification-tabs { flex-wrap: wrap; }
+  .notification-list { min-height: 0; max-height: none; overscroll-behavior: contain; }
+  .notification-item { flex-shrink: 0; padding: 12px 10px; gap: 8px; }
+  .notification-item-text, .notification-incident-id { overflow-wrap: anywhere; }
+  .notification-delete-btn { opacity: 1; }
+}
+@media (max-width: 420px) {
+  .mobile-brand > b { display: none; }
+}
+
+.overdue-visibility-toggle {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.overdue-visibility-toggle:hover,
+.overdue-visibility-toggle.active {
+  border-color: #e30611;
+  color: var(--text);
+  background: rgba(227, 6, 17, 0.08);
+}
+.overdue-visibility-toggle:focus-visible { outline: 2px solid #e30611; outline-offset: 3px; }
+
+.team-roster { border: 1px solid var(--line); border-radius: 9px; margin: 0 0 16px; overflow: hidden; }
+.team-roster summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; color: var(--subtle); font-size: 12px; font-weight: 600; cursor: pointer; }
+.team-roster summary::before { content: "+"; }
+.team-roster[open] summary::before { content: "−"; }
+.team-roster summary > span:first-child { flex: 1; }
+.itsm-source-badge { border: 1px solid var(--line); border-radius: 4px; padding: 2px 5px; color: var(--muted); font-size: 9px; }
+.team-roster ul { list-style: none; padding: 0 12px; margin: 0; max-height: 280px; overflow-y: auto; }
+.team-roster li { display: flex; align-items: start; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line-soft); padding: 10px 0; }
+.team-roster-person { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.team-roster-person b { font-size: 12px; overflow-wrap: anywhere; }
+.team-roster-person > span, .team-roster-person a { color: var(--muted); font-size: 11px; }
+.team-roster-person a:hover { color: var(--text); }
+.team-member-status { flex-shrink: 0; color: var(--muted); font-size: 10px; }
+.team-member-status.on_duty { color: #35b883; }
+.team-member-status.on_call { color: #e89232; }
+.teams-empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 20px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; }
+.teams-empty-state p { margin: 0; color: var(--text); font-weight: 600; }

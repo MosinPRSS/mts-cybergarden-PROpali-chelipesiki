@@ -47,6 +47,6 @@ export interface AppServices {
   incidents: IncidentGateway;
   analysis: AnalysisGateway;
   notifications: NotificationStorage;
-  sound: { play(type: "critical" | "assigned" | "resolved"): void };
+  sound: { play(type: "critical" | "assigned" | "resolved" | "focus"): void };
   lifecycle: { onVisible(listener: () => void): Dispose };
 }

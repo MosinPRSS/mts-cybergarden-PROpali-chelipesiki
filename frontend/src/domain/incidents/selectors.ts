@@ -1,6 +1,10 @@
 import type { Incident, IncidentView } from "./types.ts";
 import { getIncidentGroups, isIncidentActive, isIncidentResolved } from "./groups.ts";
 
+export function isIncidentOverdue(incident: Incident, seconds: number | null): boolean {
+  return isIncidentActive(incident) && seconds !== null && Number.isFinite(seconds) && seconds <= 0;
+}
+
 export function isIncidentResearch(incident: Incident): boolean {
   return ["Research", "Resolved"].includes(incident.status || "") || getIncidentGroups(incident).includes("Исследование ситуации");
 }

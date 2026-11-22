@@ -5,6 +5,8 @@ import { Icon } from "../common/Icon";
 import { NotificationHistory } from "./NotificationHistory";
 
 interface HeaderProps {
+  mobileMenuOpen: boolean;
+  onOpenMenu: () => void;
   query: string;
   onQueryChange: (q: string) => void;
   theme: "dark" | "light";
@@ -21,6 +23,8 @@ interface HeaderProps {
 }
 
 export function Header({
+  mobileMenuOpen,
+  onOpenMenu,
   query,
   onQueryChange,
   theme,
@@ -69,6 +73,11 @@ export function Header({
     <header className="topbar">
       <div className="mobile-brand">
         <span className="brand-mark"><img src="/image.png" alt="МТС" /></span>
+        <button id="mobile-menu-toggle" className="icon-button" aria-label="Открыть меню"
+          aria-controls="app-sidebar" aria-expanded={mobileMenuOpen}
+          onClick={() => { setIsOpen(false); onOpenMenu(); }}>
+          <Icon name="menu" />
+        </button>
         <b>Incident Command</b>
       </div>
 

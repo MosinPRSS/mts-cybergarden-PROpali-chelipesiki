@@ -1,13 +1,15 @@
 import type { Incident, IncidentView } from "../../domain/incidents/types.ts";
 import { getIncidentGroups, isIncidentActive } from "../../domain/incidents/groups.ts";
-import { matchesIncidentView, isIncidentResearch } from "../../domain/incidents/selectors.ts";
+import { matchesIncidentView, isIncidentResearch, isIncidentOverdue } from "../../domain/incidents/selectors.ts";
 import { formatSla } from "../formatters.ts";
 
-export function filterBoardIncidents(incidents: Incident[], query: string, view: IncidentView): Incident[] {
+export function filterBoardIncidents(incidents: Incident[], query: string, view: IncidentView,
+  options: { hideOverdue?: boolean; slaFor?: (incident: Incident) => number | null } = {}): Incident[] {
   return incidents.filter((incident) => {
     const matches = `${incident.id} ${incident.service} ${incident.area} ${incident.summary} ${getIncidentGroups(incident).join(" ")}`
       .toLowerCase().includes(query.toLowerCase());
-    return matches && matchesIncidentView(incident, view);
+    return matches && matchesIncidentView(incident, view)
+      && !(options.hideOverdue && isIncidentOverdue(incident, options.slaFor ? options.slaFor(incident) : incident.sla));
   });
 }
 

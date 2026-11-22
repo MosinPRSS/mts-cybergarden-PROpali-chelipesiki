@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { AuthUser } from "../../domain/auth.ts";
+import type { SummaryWindow } from "../../domain/analysis.ts";
+import { useFocusAlerts } from "../../application/analysis/useFocusAlerts.ts";
 import type { Incident, IncidentView } from "../../domain/incidents/types.ts";
 import { getIncidentGroups } from "../../domain/incidents/groups.ts";
 import { remainingSla } from "../../domain/incidents/sla.ts";
@@ -28,6 +30,9 @@ export function DashboardPage({ user, onLogout, signingOut }: {
   const [selected, setSelected] = useState<Incident | null>(null);
   const [query, setQuery] = useState("");
   const [activeNav, setActiveNav] = useState("board");
+  const [focusWindow, setFocusWindow] = useState<SummaryWindow>(30);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
   const [incidentView, setIncidentView] = useState<IncidentView>("all");
   const clock = useClock();
   const feedback = useFeedback();
@@ -40,7 +45,8 @@ export function DashboardPage({ user, onLogout, signingOut }: {
     reset();
     setSelected((item) => item ? data.find((fresh) => fresh.id === item.id) || null : null);
   }, [receiveSnapshot, reset]);
-  const { incidents, applySavedIncident } = useIncidents(onSnapshot, feedback.connectionChanged);
+  const { incidents, applySavedIncident, initialized } = useIncidents(onSnapshot, feedback.connectionChanged);
+  useFocusAlerts(incidents, clock.now, focusWindow, initialized);
   const actions = useIncidentActions(applySavedIncident, feedback.actionFailed, feedback.assigned);
   const closeDrawer = useCallback(() => setSelected(null), []);
   useDashboardShortcuts(closeDrawer);
@@ -54,9 +60,12 @@ export function DashboardPage({ user, onLogout, signingOut }: {
   }, [incidents]);
 
   return <div className={`app ${theme}`}>
-    <Sidebar activeNav={activeNav} onSelectNav={setActiveNav} criticalCount={criticalCount} overdueCount={overdueCount} user={user} />
-    <main>
+    <Sidebar activeNav={activeNav} onSelectNav={(key) => { setActiveNav(key); closeMobileMenu(); }}
+      mobileOpen={mobileMenuOpen} onClose={closeMobileMenu}
+      criticalCount={criticalCount} overdueCount={overdueCount} user={user} />
+    <main inert={mobileMenuOpen}>
       <Header query={query} onQueryChange={setQuery} theme={theme}
+        mobileMenuOpen={mobileMenuOpen} onOpenMenu={() => setMobileMenuOpen(true)}
         onThemeToggle={() => setTheme(theme === "dark" ? "light" : "dark")}
         notifications={notifications.notifications} onMarkAsRead={notifications.markAsRead}
         onMarkAllAsRead={notifications.markAllAsRead} onDeleteNotification={notifications.remove}
@@ -64,6 +73,7 @@ export function DashboardPage({ user, onLogout, signingOut }: {
         onLogout={onLogout} signingOut={signingOut} user={user} />
       <div className="content">
         {activeNav === "board" && <BoardPage incidents={incidents} query={query} now={clock.now}
+          focusWindow={focusWindow} onFocusWindowChange={setFocusWindow}
           incidentView={incidentView} onSetIncidentView={setIncidentView}
           slaFor={slaFor} onSelectIncident={setSelected} onResolveIncident={actions.resolve} />}
         {activeNav === "teams" && <TeamsView incidents={incidents} onAssignTeam={actions.assign} onSelectIncident={setSelected} />}

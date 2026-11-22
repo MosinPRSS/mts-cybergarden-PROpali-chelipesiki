@@ -1,6 +1,8 @@
 import type { Team } from "../domain/teams/types.ts";
+import { mockItsmTeam } from "./itsmDirectory.ts";
+import type { ItsmTeamProfile } from "./itsmDirectory.ts";
 
-export const TEAMS_DATA: Team[] = [
+const TEAM_PROFILES: ItsmTeamProfile[] = [
   {
     id: "coordinators",
     name: "КЦ ИТ Координаторы Массовых Инцидентов",
@@ -192,3 +194,6 @@ export const TEAMS_DATA: Team[] = [
     channel: "@mts_b2c_ops",
   },
 ];
+
+// Read-only directory output; external participants are not service accounts.
+export const TEAMS_DATA: Team[] = TEAM_PROFILES.map(mockItsmTeam);

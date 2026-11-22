@@ -59,7 +59,7 @@ export function TeamsView({
         const q = search.toLowerCase();
         const matchesName = team.name.toLowerCase().includes(q);
         const matchesDomain = team.domain.toLowerCase().includes(q);
-        const matchesLead = team.lead.name.toLowerCase().includes(q);
+        const matchesLead = team.members.some((member) => `${member.name} ${member.login} ${member.role}`.toLowerCase().includes(q));
         const matchesServices = team.services.some((s) => s.toLowerCase().includes(q));
         const matchesTags = team.tags.some((t) => t.toLowerCase().includes(q));
         if (!matchesName && !matchesDomain && !matchesLead && !matchesServices && !matchesTags) {
@@ -210,6 +210,13 @@ export function TeamsView({
           />
         ))}
       </div>
+
+      {filteredTeams.length === 0 && <div className="teams-empty-state" role="status">
+        <Icon name="users" size={28} />
+        <p>Команды не найдены</p>
+        <span>Измените поиск или выбранный фильтр.</span>
+        <button className="secondary-button" onClick={() => { setSearch(""); setFilterMode("all"); }}>Сбросить фильтры</button>
+      </div>}
 
       {/* ASSIGN INCIDENT MODAL */}
       {selectedTeamForAssign && onAssignTeam && (

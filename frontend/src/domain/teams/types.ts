@@ -1,7 +1,11 @@
 export interface TeamMember {
+  /** Opaque external identity supplied by ITSM; never a local user account. */
+  externalId: string;
   name: string;
   login: string;
+  /** Job title in the external team, not a permission in this service. */
   role: string;
+  availability: "on_duty" | "on_call" | "off_duty";
   phone?: string;
   telegram?: string;
 }
@@ -9,12 +13,14 @@ export interface TeamMember {
 export type TeamDutyStatus = "on_duty" | "busy" | "standby";
 
 export interface Team {
+  source: "itsm";
   id: string;
   name: string;
   domain: string;
   description: string;
   lead: TeamMember;
   membersCount: number;
+  members: TeamMember[];
   services: string[];
   tags: string[];
   status: TeamDutyStatus;

@@ -27,11 +27,16 @@ interface AiOverviewProps {
   incidents: Incident[];
   now: number;
   mode?: SummaryMode;
+  windowMinutes?: SummaryWindow;
+  onWindowChange?: (minutes: SummaryWindow) => void;
   onSelectIncident: (incident: Incident) => void;
 }
 
-export function AiOverview({ incidents, now, mode = "upcoming", onSelectIncident }: AiOverviewProps) {
-  const [windowMinutes, setWindowMinutes] = useState<SummaryWindow>(30);
+export function AiOverview({ incidents, now, mode = "upcoming", onSelectIncident,
+  windowMinutes: selectedWindow, onWindowChange }: AiOverviewProps) {
+  const [localWindow, setLocalWindow] = useState<SummaryWindow>(30);
+  const windowMinutes = selectedWindow ?? localWindow;
+  const setWindowMinutes = onWindowChange ?? setLocalWindow;
   const [priority, setPriority] = useState<OverduePriority>("all");
   const [age, setAge] = useState<OverdueAge>("all");
   const { overview, loading, error, highlights, candidateCount, refresh } = useDashboardSummary(incidents, now, mode, windowMinutes);

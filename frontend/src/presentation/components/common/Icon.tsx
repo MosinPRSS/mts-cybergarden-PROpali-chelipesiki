@@ -9,6 +9,7 @@ interface IconProps {
 
 export function Icon({ name, size = 18, className = "" }: IconProps) {
   const paths: Record<IconName, React.ReactNode> = {
+    menu: <path d="M4 6h16M4 12h16M4 18h16" />,
     grid: (
       <>
         <rect x="3" y="3" width="7" height="7" rx="1.5" />

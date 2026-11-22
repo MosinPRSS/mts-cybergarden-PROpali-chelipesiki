@@ -98,6 +98,20 @@ export function TeamCard({
         </div>
       </div>
 
+      <details className="team-roster">
+        <summary><span>Состав команды · {team.members.length}</span><span className="itsm-source-badge">ITSM</span></summary>
+        <ul>
+          {team.members.map((member) => <li key={member.externalId}>
+            <div className="team-roster-person"><b>{member.name}</b><span>{member.role}</span>
+              {member.phone && <a href={`tel:${member.phone.replace(/[^+\d]/g, "")}`}>{member.phone}</a>}
+            </div>
+            <span className={`team-member-status ${member.availability}`}>
+              {{ on_duty: "На смене", on_call: "На связи", off_duty: "Вне смены" }[member.availability]}
+            </span>
+          </li>)}
+        </ul>
+      </details>
+
       {/* SERVICES & COMPETENCIES */}
       <div className="team-services-section">
         <span className="section-subtitle">Сервисы и домены:</span>

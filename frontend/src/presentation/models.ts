@@ -1,4 +1,5 @@
 export type IconName =
+  | "menu"
   | "grid"
   | "chart"
   | "users"

@@ -48,3 +48,25 @@ test("metrics count unique incidents while preserving SLA and overlapping group 
   });
   assert.deepEqual(rows, before);
 });
+
+test("hide overdue preserves resolved, no-deadline and future incidents, and composes with search", () => {
+  const rows = [
+    row("overdue", { status: "Assigned", sla: -10 }),
+    row("expired", { status: "Assigned", sla: 0 }),
+    row("future", { status: "Assigned", sla: 20 }),
+    row("unknown", { status: "Assigned", sla: null }),
+    row("invalid", { status: "Assigned", sla: NaN }),
+    row("resolved", { status: "Resolved", sla: -10, sla_state: "breached" }),
+  ];
+  assert.deepEqual(filterBoardIncidents(rows, "", "all", { hideOverdue: true }).map((item) => item.id),
+    ["future", "unknown", "invalid", "resolved"]);
+  assert.equal(filterBoardIncidents(rows, "", "all").length, rows.length);
+  assert.deepEqual(filterBoardIncidents(rows, "future", "all", { hideOverdue: true }).map((item) => item.id), ["future"]);
+  assert.deepEqual(filterBoardIncidents(rows, "", "research", { hideOverdue: true }).map((item) => item.id), ["resolved"]);
+});
+
+test("hide overdue follows the live SLA callback as deadlines expire", () => {
+  const rows = [row("live", { status: "Assigned", sla: 100 })];
+  assert.equal(filterBoardIncidents(rows, "", "all", { hideOverdue: true, slaFor: () => 1 }).length, 1);
+  assert.equal(filterBoardIncidents(rows, "", "all", { hideOverdue: true, slaFor: () => 0 }).length, 0);
+});

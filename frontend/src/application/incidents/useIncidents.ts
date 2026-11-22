@@ -8,6 +8,7 @@ export type SnapshotListener = (previous: Map<string, Incident> | null, current:
 export function useIncidents(onSnapshot: SnapshotListener, onConnection: (status: ConnectionStatus) => void) {
   const { incidents: gateway, lifecycle } = useServices();
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [initialized, setInitialized] = useState(false);
   const previous = useRef<Map<string, Incident> | null>(null);
   const revision = useRef(0);
 
@@ -15,6 +16,7 @@ export function useIncidents(onSnapshot: SnapshotListener, onConnection: (status
     revision.current += 1;
     onSnapshot(previous.current, data);
     previous.current = new Map(data.map((item) => [item.id, item]));
+    setInitialized(true);
     setIncidents(data);
   }, [onSnapshot]);
 
@@ -76,5 +78,5 @@ export function useIncidents(onSnapshot: SnapshotListener, onConnection: (status
     applySnapshot(Array.from(map.values(), (item) => item.id === saved.id ? saved : item));
   }, [applySnapshot]);
 
-  return { incidents, applySavedIncident };
+  return { incidents, applySavedIncident, initialized };
 }

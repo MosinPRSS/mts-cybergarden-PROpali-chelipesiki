@@ -29,6 +29,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from typing import Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +175,7 @@ def generate_incident() -> dict:
     deadline = submit_date + timedelta(hours=deadline_hours)
 
     is_resolved = state_rec["stateId"] in (7, 10, 20)
-    completion_date: datetime | None = None
+    completion_date: Optional[datetime] = None
     if is_resolved:
         completion_date = submit_date + timedelta(
             minutes=random.randint(10, deadline_hours * 60 - 5)
@@ -250,7 +251,7 @@ def generate_incident() -> dict:
 # HTTP-запрос (stdlib, без зависимостей)
 # ---------------------------------------------------------------------------
 
-def post_incident(url: str, payload: dict, *, opener=None) -> tuple[int, dict]:
+def post_incident(url: str, payload: dict, *, opener=None) -> Tuple[int, dict]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url=url,

@@ -56,3 +56,11 @@ python generator.py --url http://my-server:8000 --count 5 --interval 1
 [12:34:02] ✓ INC987654321098765 | Низкий   | Assigned          | создан, SSE→2 клиентов
 [12:34:03] ✓ INC111222333444555 | Наивысший| Resolved          | создан, SSE→2 клиентов
 ```
+
+Генератор поддерживает Python 3.8+ без сторонних зависимостей. На production
+используйте HTTPS-домен: порт API 8000 не публикуется, сессионная cookie требует HTTPS.
+Команда из корня проекта (пароль запрашивается скрытым вводом):
+
+```bash
+python3 incident-generator/generator.py --url https://your-domain.ru --login coordinator --count 5 --interval 5
+```

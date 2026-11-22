@@ -326,3 +326,99 @@ test("research exposes undo and final closure, and closed cards retain both auth
   assert.match(view.container.textContent, /Закрыл: Петров Пётр/);
   assert.doesNotMatch(view.container.querySelector(".drawer-actions").textContent, /Вернуть в работу|Закрыть инцидент/);
 });
+
+test("focus sound follows live top-three entries and ignores initial loading and revisions", async (t) => {
+  const { useFocusAlerts } = await load("application/analysis/useFocusAlerts.ts");
+  const sounds = [];
+  const services = defaults({ sound: { play: (type) => sounds.push(type) } });
+  const rows = [row("one", 5), row("two", 10), row("three", 15), row("four", 20)];
+  const view = await hook(t, useFocusAlerts, services, [[], now, 30, false]);
+  await view.rerender([rows, now, 30, true]);
+  assert.deepEqual(sounds, []);
+  await view.rerender([rows.map((item) => ({ ...item, updated: "v2" })), now + 1000, 30, true]);
+  assert.deepEqual(sounds, []);
+  await view.rerender([[...rows, row("outside-top", 25)], now, 30, true]);
+  assert.deepEqual(sounds, []);
+  await view.rerender([[row("new-one", 1), row("new-two", 2), ...rows], now, 30, true]);
+  assert.deepEqual(sounds, ["focus"]);
+  await view.rerender([[row("new-one", 1), row("new-two", 2), ...rows], now, 30, true]);
+  assert.deepEqual(sounds, ["focus"]);
+});
+
+test("focus sound handles timer entry and silent period changes", async (t) => {
+  const { useFocusAlerts } = await load("application/analysis/useFocusAlerts.ts");
+  const sounds = [];
+  const services = defaults({ sound: { play: (type) => sounds.push(type) } });
+  const soon = row("soon", 1), later = row("later", 31);
+  const view = await hook(t, useFocusAlerts, services, [[soon, later], now, 30, true]);
+  await view.rerender([[soon, later], now + 60000, 30, true]);
+  assert.deepEqual(sounds, ["focus"]);
+  await view.rerender([[soon, later, row("hour", 55)], now + 60000, 60, true]);
+  assert.deepEqual(sounds, ["focus"]);
+  await view.rerender([[soon, later, row("hour", 55), row("new", 5)], now + 60000, 60, true]);
+  assert.deepEqual(sounds, ["focus", "focus"]);
+  await view.rerender([[], now + 60000, 60, true]);
+  assert.deepEqual(sounds, ["focus", "focus"]);
+});
+
+test("focus monitoring survives navigation and keeps the chosen period", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now });
+  let observer;
+  const sounds = [];
+  const services = defaults({ sound: { play: (type) => sounds.push(type) }, incidents: {
+    list: async () => [], subscribe: (value) => { observer = value; return () => {}; }
+  } });
+  const view = await render(t, createElement(DashboardPage, { user, onLogout() {}, signingOut: false }), services);
+  const control = view.container.querySelector('select[aria-label="Время до просрочки"]');
+  await act(async () => { control.value = "60"; control.dispatchEvent(new window.Event("change", { bubbles: true })); });
+  await act(async () => view.container.querySelector('nav button[aria-label^="Ассистент"]').click());
+  await act(async () => observer.snapshot([row("new-focus", 45)]));
+  assert.equal(sounds.filter((type) => type === "focus").length, 1);
+  await act(async () => view.container.querySelector('nav button[aria-label="Инциденты"]').click());
+  assert.equal(view.container.querySelector('select[aria-label="Время до просрочки"]').value, "60");
+  assert.equal(sounds.filter((type) => type === "focus").length, 1);
+});
+
+test("board overdue toggle hides expired cards, restores them and follows timer changes", async (t) => {
+  const { BoardPage } = await load("presentation/pages/BoardPage.tsx");
+  const incidents = [row("expired-toggle", -2), row("future-toggle", 2)];
+  let seconds = 120;
+  const props = { incidents, query: "", now, incidentView: "all", focusWindow: 30,
+    onFocusWindowChange() {}, onSetIncidentView() {}, onSelectIncident() {}, onResolveIncident() {},
+    slaFor: (item) => item.id === "expired-toggle" ? -120 : seconds };
+  const view = await render(t, createElement(BoardPage, props), defaults());
+  const cards = () => Array.from(view.container.querySelectorAll('.board .incident-card')).map((card) => card.getAttribute('aria-label'));
+  const toggle = () => view.container.querySelector('.overdue-visibility-toggle');
+  assert.equal(cards().length, 2);
+  assert.equal(toggle().textContent, "Скрыть просроченные");
+  await act(async () => toggle().click());
+  assert.equal(toggle().getAttribute("aria-pressed"), "true");
+  assert.equal(cards().length, 1);
+  assert.ok(cards()[0].startsWith("future-toggle:"));
+  seconds = 0;
+  await view.update(createElement(BoardPage, { ...props, slaFor: (item) => item.id === "expired-toggle" ? -120 : seconds }));
+  assert.equal(cards().length, 0);
+  await act(async () => toggle().click());
+  assert.equal(cards().length, 2);
+  assert.equal(toggle().getAttribute("aria-pressed"), "false");
+});
+
+test("teams page shows an external ITSM roster and supports empty search recovery", async (t) => {
+  const { TeamsView } = await load("presentation/components/teams/TeamsView.tsx");
+  const { TEAMS_DATA } = await load("data/teams.ts");
+  const view = await render(t, createElement(TeamsView, { incidents: [], onAssignTeam() {}, onSelectIncident() {} }), defaults());
+  assert.equal(view.container.querySelectorAll('.team-card').length, TEAMS_DATA.length);
+  const roster = view.container.querySelector('.team-roster');
+  assert.equal(roster.querySelectorAll('li').length, TEAMS_DATA[0].membersCount);
+  assert.ok(roster.textContent.includes(TEAMS_DATA[0].lead.name));
+  assert.ok(roster.querySelector('.itsm-source-badge').textContent.includes('ITSM'));
+  const input = view.container.querySelector('.teams-search-box input');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'no-such-team-or-participant');
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  assert.equal(view.container.querySelectorAll('.team-card').length, 0);
+  assert.ok(view.container.querySelector('.teams-empty-state'));
+  await act(async () => view.container.querySelector('.teams-empty-state button').click());
+  assert.equal(view.container.querySelectorAll('.team-card').length, TEAMS_DATA.length);
+});
