@@ -31,6 +31,7 @@ export function DashboardPage({ user, onLogout, signingOut }: {
   const [query, setQuery] = useState("");
   const [activeNav, setActiveNav] = useState("board");
   const [focusWindow, setFocusWindow] = useState<SummaryWindow>(30);
+  const [showAiSummary, setShowAiSummary] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
   const [incidentView, setIncidentView] = useState<IncidentView>("all");
@@ -59,7 +60,7 @@ export function DashboardPage({ user, onLogout, signingOut }: {
     if (found) setSelected(found);
   }, [incidents]);
 
-  return <div className={`app ${theme}`}>
+  return <div className={`app ${theme}`} data-pwa-busy={actions.savingIds.length > 0 || actions.undoable.length > 0 || signingOut}>
     <Sidebar activeNav={activeNav} onSelectNav={(key) => { setActiveNav(key); closeMobileMenu(); }}
       mobileOpen={mobileMenuOpen} onClose={closeMobileMenu}
       criticalCount={criticalCount} overdueCount={overdueCount} user={user} />
@@ -74,6 +75,7 @@ export function DashboardPage({ user, onLogout, signingOut }: {
       <div className="content">
         {activeNav === "board" && <BoardPage incidents={incidents} query={query} now={clock.now}
           focusWindow={focusWindow} onFocusWindowChange={setFocusWindow}
+          showAiSummary={showAiSummary} onToggleAiSummary={() => setShowAiSummary((value) => !value)}
           incidentView={incidentView} onSetIncidentView={setIncidentView}
           slaFor={slaFor} onSelectIncident={setSelected} onResolveIncident={actions.resolve} />}
         {activeNav === "teams" && <TeamsView incidents={incidents} onAssignTeam={actions.assign} onSelectIncident={setSelected} />}

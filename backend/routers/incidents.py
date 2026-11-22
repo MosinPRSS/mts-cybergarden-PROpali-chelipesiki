@@ -2,7 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -12,11 +12,22 @@ from core.db import get_db
 from core.auth import get_current_session, require_operator, CurrentSession
 from domain.incidents import IncidentState
 from models import Incident, IncidentAction
-from services.incidents import import_incidents, load_incident_snapshot, publish_incident_snapshot
+from services.incidents import INCIDENT_NOTIFICATION_ORIGIN, import_incidents, load_incident_snapshot, publish_incident_snapshot
 from schemas.incidents import ErrorResponse, IncidentUndoRequest, IncidentAssignRequest, IncidentCreate, IncidentCreateResponse, IncidentResponse
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[Depends(get_current_session)])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+async def incident_write_session(db: DatabaseSession):
+    # Transaction-local: pooled connections must not retain an API origin when
+    # later used by a script or background writer. This API publishes after commit.
+    await db.execute(text("SELECT set_config('mts.incident_origin', :origin, true)"),
+                     {"origin": INCIDENT_NOTIFICATION_ORIGIN})
+    return db
+
+
+IncidentWriteSession = Annotated[AsyncSession, Depends(incident_write_session)]
 
 
 async def get_incident_or_404(db: AsyncSession, incident_id: str, *, for_update: bool = False) -> Incident:
@@ -47,7 +58,7 @@ async def list_incidents(db: DatabaseSession):
     description="Переводит инцидент в статус Research, фиксирует дату завершения и уведомляет подписчиков через SSE.",
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
-async def resolve_incident(incident_id: str, db: DatabaseSession, session: CurrentSession):
+async def resolve_incident(incident_id: str, db: IncidentWriteSession, session: CurrentSession):
     incident = await get_incident_or_404(db, incident_id, for_update=True)
 
     if incident.state_enum in (IncidentState.RESOLVED, IncidentState.CLOSED, IncidentState.RESEARCH):
@@ -85,7 +96,7 @@ async def resolve_incident(incident_id: str, db: DatabaseSession, session: Curre
 
 @router.post("/{incident_id}/undo-resolve", response_model=IncidentResponse,
              dependencies=[Depends(require_operator)], summary="Вернуть инцидент из исследования в работу")
-async def undo_resolution(incident_id: str, payload: IncidentUndoRequest, db: DatabaseSession, session: CurrentSession):
+async def undo_resolution(incident_id: str, payload: IncidentUndoRequest, db: IncidentWriteSession, session: CurrentSession):
     incident = await get_incident_or_404(db, incident_id, for_update=True)
     now = datetime.now(timezone.utc)
     if payload.updated_at.tzinfo is None:
@@ -122,7 +133,7 @@ async def undo_resolution(incident_id: str, payload: IncidentUndoRequest, db: Da
 
 @router.post("/{incident_id}/close", response_model=IncidentResponse,
              dependencies=[Depends(require_operator)], summary="Закрыть исследование и отправить в историю")
-async def close_incident(incident_id: str, payload: IncidentUndoRequest, db: DatabaseSession, session: CurrentSession):
+async def close_incident(incident_id: str, payload: IncidentUndoRequest, db: IncidentWriteSession, session: CurrentSession):
     incident = await get_incident_or_404(db, incident_id, for_update=True)
     if incident.updated_at != payload.updated_at or incident.state_enum not in (IncidentState.RESEARCH, IncidentState.RESOLVED):
         raise HTTPException(409, "Закрыть можно только актуальный инцидент из исследования.")
@@ -153,7 +164,7 @@ async def close_incident(incident_id: str, payload: IncidentUndoRequest, db: Dat
     description="Обновляет назначенную команду (assignedGroupName), фиксирует дату назначения и рассылает SSE.",
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
-async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: DatabaseSession):
+async def assign_incident(incident_id: str, payload: IncidentAssignRequest, db: IncidentWriteSession):
     incident = await get_incident_or_404(db, incident_id, for_update=True)
 
     now = datetime.now(timezone.utc)
@@ -217,7 +228,7 @@ async def get_incident_source(incident_id: str, db: DatabaseSession):
     ),
     responses={422: {"description": "Ошибка валидации — неверный формат поля"}},
 )
-async def create_incident(payload: IncidentCreate, request: Request, db: DatabaseSession) -> IncidentCreateResponse:
+async def create_incident(payload: IncidentCreate, request: Request, db: IncidentWriteSession) -> IncidentCreateResponse:
     # Keep the actual source object, including sentinel dates and extra attributes.
     raw = await request.json()
     try:

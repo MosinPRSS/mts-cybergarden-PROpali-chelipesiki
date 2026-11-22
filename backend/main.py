@@ -16,6 +16,7 @@ from routers.sse import router as sse_router
 from routers.summary import router as summary_router
 from schemas.incidents import HealthResponse
 from services.users import seed_default_users
+from services.incident_changes import watch_incident_changes
 
 
 def apply_migrations(connection: Connection) -> None:
@@ -35,7 +36,8 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal.begin() as session:
             await seed_default_users(session)
 
-        yield  # Миграции завершены — API начинает обслуживать запросы.
+        async with watch_incident_changes(engine, AsyncSessionLocal):
+            yield  # Миграции завершены — API начинает обслуживать запросы.
     finally:
         sse_manager.close_all()
         await engine.dispose()

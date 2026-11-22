@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from pydantic import TypeAdapter
 from sqlalchemy import case, select
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.sse_manager import sse_manager
 from domain.incidents import IncidentSource
 from models import Incident
+
+INCIDENT_NOTIFICATION_ORIGIN = uuid4().hex
 
 
 async def load_incident_snapshot(session: AsyncSession) -> list[dict]:

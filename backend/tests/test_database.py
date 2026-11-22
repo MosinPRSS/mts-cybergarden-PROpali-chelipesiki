@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import unittest
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 
 from alembic import command
@@ -26,6 +27,139 @@ from tests.helpers import ASGIConnection, authorize_test_user
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "Run python -m scripts.test_database for PostgreSQL tests")
 class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
+    @asynccontextmanager
+    async def watch_changes(self):
+        from services.incident_changes import IncidentChangeListener
+
+        listener = IncidentChangeListener(self.engine, self.sessions,
+            debounce_seconds=0.02, retry_seconds=0.05, heartbeat_seconds=0.1)
+        task = asyncio.create_task(listener.run())
+        try:
+            await asyncio.wait_for(listener.ready.wait(), timeout=3)
+            yield listener
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        self.assertFalse(listener.ready.is_set())
+
+    async def test_direct_boolean_update_reaches_all_browser_streams_only_after_commit(self):
+        from tests.helpers import parse_sse
+
+        await self.seed()
+        identifier = self.records[0]["id"]
+        before = (await self.auth_request(f"/api/incidents/{identifier}"))[2]
+        async with self.watch_changes():
+            async with ASGIConnection("/api/incidents/stream") as first, ASGIConnection("/api/incidents/stream") as second:
+                for client in (first, second):
+                    self.assertEqual((await client.next_message())["status"], 200)
+                    await client.next_message()  # connected comment
+                async with self.engine.connect() as writer:
+                    await writer.execute(text("UPDATE incidents SET is_double = NOT is_double WHERE id = :id"), {"id": identifier})
+                    await asyncio.sleep(0.08)
+                    self.assertTrue(first.outgoing.empty())
+                    self.assertTrue(second.outgoing.empty())
+                    await writer.commit()
+                snapshots = [json.loads(parse_sse((await client.next_message())["body"])["data"])
+                             for client in (first, second)]
+                self.assertEqual(snapshots[0], snapshots[1])
+                self.assertEqual(len(snapshots[0]), len(self.records))
+                updated = next(item for item in snapshots[0] if item["id"] == identifier)
+                self.assertEqual(updated["isDouble"], not before["isDouble"])
+                self.assertGreater(updated["updated"], before["updated"])
+
+    async def test_rolled_back_and_noop_sql_updates_do_not_notify_or_advance_version(self):
+        from core.sse_manager import sse_manager
+
+        await self.seed()
+        identifier = self.records[0]["id"]
+        before = (await self.auth_request(f"/api/incidents/{identifier}"))[2]
+        async with self.watch_changes(), sse_manager.subscribe() as subscription:
+            async with self.engine.connect() as writer:
+                await writer.execute(text("UPDATE incidents SET is_double = NOT is_double WHERE id = :id"), {"id": identifier})
+                await writer.rollback()
+                await writer.execute(text("UPDATE incidents SET is_double = is_double WHERE id = :id"), {"id": identifier})
+                await writer.commit()
+            await asyncio.sleep(0.1)
+            self.assertTrue(subscription.queue.empty())
+        after = (await self.auth_request(f"/api/incidents/{identifier}"))[2]
+        self.assertEqual(after["updated"], before["updated"])
+        self.assertEqual(after["isDouble"], before["isDouble"])
+
+    async def test_background_import_bulk_update_delete_and_truncate_publish_snapshots(self):
+        from core.sse_manager import sse_manager
+
+        async def snapshot(subscription):
+            event = await asyncio.wait_for(anext(subscription.events()), timeout=3)
+            return json.loads(event.raw_data)
+
+        async with self.watch_changes(), sse_manager.subscribe() as subscription:
+            await self.seed()  # CLI uses this path, with no explicit SSE publisher.
+            self.assertEqual(len(await snapshot(subscription)), len(self.records))
+            self.assertTrue(subscription.queue.empty())
+            async with self.engine.begin() as writer:
+                await writer.execute(text("UPDATE incidents SET team_selected_with_ai = true"))
+            self.assertTrue(all(item["team_selected_with_ai"] for item in await snapshot(subscription)))
+            self.assertTrue(subscription.queue.empty())
+            async with self.engine.begin() as writer:
+                await writer.execute(text("DELETE FROM incidents WHERE id = :id"), {"id": self.records[0]["id"]})
+            self.assertEqual(len(await snapshot(subscription)), len(self.records) - 1)
+            async with self.engine.begin() as writer:
+                await writer.execute(text("TRUNCATE incidents CASCADE"))
+            self.assertEqual(await snapshot(subscription), [])
+
+    async def test_api_changes_are_not_published_twice_and_origin_is_transaction_local(self):
+        from core.sse_manager import sse_manager
+
+        identifier = self.records[0]["id"]
+        path = f"/api/incidents/{identifier}"
+        async with self.watch_changes(), sse_manager.subscribe() as subscription:
+            _, _, created = await self.auth_request("/api/incidents", method="POST", data=self.records[0])
+            self.assertEqual(created["sseNotified"], 1)
+            await anext(subscription.events())
+            for action, payload in (("assign", {"team": "Исполнители"}), ("resolve", None),
+                                    ("undo-resolve", None), ("resolve", None), ("close", None)):
+                current = (await self.auth_request(path))[2]
+                if action in ("undo-resolve", "close"):
+                    payload = {"updated_at": current["updated"]}
+                status, _, _ = await self.auth_request(path + "/" + action, method="POST", data=payload)
+                self.assertEqual(status, 200)
+                await anext(subscription.events())
+            await asyncio.sleep(0.1)
+            self.assertTrue(subscription.queue.empty())
+            # A later unmarked writer must still notify after API transactions.
+            async with self.engine.begin() as writer:
+                await writer.execute(text("UPDATE incidents SET is_double = NOT is_double WHERE id = :id"), {"id": identifier})
+            event = await asyncio.wait_for(anext(subscription.events()), timeout=3)
+            self.assertEqual(json.loads(event.raw_data)[0]["isDouble"], not self.records[0]["isDouble"])
+
+    async def test_listener_reconnects_and_resynchronizes_after_connection_is_terminated(self):
+        from unittest.mock import patch
+        from core.sse_manager import sse_manager
+
+        await self.seed()
+        async with self.watch_changes() as listener, sse_manager.subscribe() as subscription:
+            published = asyncio.Event()
+            original_publish = listener._publish
+
+            async def publish():
+                await original_publish()
+                published.set()
+
+            with patch.object(listener, "_publish", new=publish):
+                async with self.engine.begin() as writer:
+                    pid = await writer.scalar(text("""
+                        SELECT pid FROM pg_stat_activity
+                        WHERE datname = current_database() AND query LIKE 'LISTEN %'
+                    """))
+                    self.assertIsNotNone(pid)
+                    await writer.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": pid})
+                    await writer.execute(text("UPDATE incidents SET team_selected_with_ai = true"))
+                await asyncio.wait_for(published.wait(), timeout=3)
+            event = await asyncio.wait_for(anext(subscription.events()), timeout=3)
+            self.assertTrue(all(item["team_selected_with_ai"] for item in json.loads(event.raw_data)))
+            self.assertTrue(listener.ready.is_set())
+
     async def test_completion_undo_restores_previous_state_and_records_both_actions(self):
         from models import IncidentAction
         await self.seed()
@@ -470,7 +604,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             )
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
         self.assertEqual(differences, [])
-        self.assertEqual(revision, "0009")
+        self.assertEqual(revision, "0010")
 
     async def test_import_preserves_all_original_fields_without_creating_accounts(self):
         self.assertEqual(await self.seed(), {"incidents_created": 44, "incidents_updated": 0, "incidents_unchanged": 0})

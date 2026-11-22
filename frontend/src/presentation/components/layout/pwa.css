@@ -1,0 +1,21 @@
+.pwa-content { min-height: 100dvh; }
+.pwa-controls { position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); right: max(16px, env(safe-area-inset-right)); z-index: 1050; max-width: min(360px, calc(100vw - 32px)); color: #eef2f7; font: 13px/1.5 Inter, sans-serif; }
+.pwa-card { position: relative; padding: 18px; border: 1px solid #344154; border-radius: 12px; background: #111b2a; box-shadow: 0 12px 48px #0005; }
+.pwa-card strong { display: block; padding-right: 14px; font-size: 14px; }
+.pwa-card p { margin: 7px 0 14px; color: #aeb9c9; }
+.pwa-controls button { border: 1px solid transparent; border-radius: 7px; padding: 9px 13px; background: #e30611; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.pwa-controls button:disabled { opacity: .5; cursor: default; }
+.pwa-controls button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.pwa-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pwa-controls .pwa-secondary, .pwa-controls .pwa-compact { background: #182436; border-color: #344154; }
+.pwa-controls .pwa-dismiss { position: absolute; top: 5px; right: 5px; background: transparent; padding: 4px 9px; font-size: 20px; }
+.pwa-card .pwa-error, .pwa-error { color: #ff949b; }
+.pwa-offline { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; padding: 24px; background: #0c121d; color: #eef2f7; font-family: Inter, sans-serif; }
+.pwa-offline-card { width: min(100%, 420px); }
+.pwa-brand { display: block; width: 56px; height: 56px; border-radius: 8px; }
+.pwa-offline h1 { margin: 24px 0 12px; font-size: 25px; line-height: 1.3; }
+.pwa-offline p { color: #aeb9c9; font-size: 14px; line-height: 1.7; }
+.pwa-waiting { display: block; margin-top: 24px; color: #aeb9c9; font-size: 13px; }
+@media (max-width: 600px) {
+  .pwa-controls { bottom: max(12px, env(safe-area-inset-bottom)); right: 12px; max-width: calc(100vw - 24px); }
+}

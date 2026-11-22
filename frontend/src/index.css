@@ -398,6 +398,10 @@ main {
   justify-content: space-between;
   margin-bottom: 21px;
 }
+.board-page-heading { align-items: center; flex-wrap: wrap; gap: 14px; }
+.ai-summary-toggle { display: inline-flex; align-items: center; gap: 8px; }
+.ai-summary-toggle svg { flex-shrink: 0; color: #a296ff; }
+.ai-summary-toggle:focus-visible { outline: 2px solid #a296ff; outline-offset: 3px; }
 .page-heading p {
   font-size: 10px;
   text-transform: uppercase;

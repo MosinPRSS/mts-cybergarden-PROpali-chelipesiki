@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 from main import app
 
@@ -120,5 +120,9 @@ def mock_lifespan_database():
     engine = MagicMock()
     engine.begin.return_value.__aenter__.return_value.run_sync = AsyncMock()
     engine.dispose = AsyncMock()
-    with patch("main.engine", engine), patch("main.seed_default_users", new=AsyncMock(return_value=0)):
+    @asynccontextmanager
+    async def watcher(*args):
+        yield
+
+    with patch("main.engine", engine), patch("main.seed_default_users", new=AsyncMock(return_value=0)), patch("main.watch_incident_changes", watcher):
         yield

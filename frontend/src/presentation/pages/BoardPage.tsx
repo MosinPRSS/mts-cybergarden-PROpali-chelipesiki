@@ -6,8 +6,11 @@ import { getIncidentBoardGroups } from "../../domain/incidents/groups.ts";
 import { AiOverview, BoardColumn, OverviewStats, Toolbar } from "../components/dashboard";
 import { getBoardColumns } from "../dashboard/columns.ts";
 import { filterBoardIncidents, getDashboardMetrics } from "../dashboard/selectors.ts";
+import { Icon } from "../components/common/Icon.tsx";
 
 interface BoardPageProps {
+  showAiSummary: boolean;
+  onToggleAiSummary: () => void;
   focusWindow: SummaryWindow;
   onFocusWindowChange: (minutes: SummaryWindow) => void;
   incidents: Incident[];
@@ -21,7 +24,8 @@ interface BoardPageProps {
 }
 
 export function BoardPage({ incidents, query, now, incidentView,
-  onSetIncidentView, slaFor, onSelectIncident, onResolveIncident, focusWindow, onFocusWindowChange }: BoardPageProps) {
+  onSetIncidentView, slaFor, onSelectIncident, onResolveIncident, focusWindow, onFocusWindowChange,
+  showAiSummary, onToggleAiSummary }: BoardPageProps) {
   const [hideOverdue, setHideOverdue] = useState(false);
   const filtered = useMemo(() => filterBoardIncidents(incidents, query, incidentView, { hideOverdue, slaFor }),
     [incidents, query, incidentView, hideOverdue, slaFor]);
@@ -29,11 +33,19 @@ export function BoardPage({ incidents, query, now, incidentView,
   const metrics = useMemo(() => getDashboardMetrics(incidents, slaFor), [incidents, slaFor]);
 
   return <>
-    <div className="page-heading"><div>
+    <div className="page-heading board-page-heading"><div>
       <h1>Инциденты в фокусе</h1>
-    </div></div>
-    <AiOverview incidents={incidents} now={now} onSelectIncident={onSelectIncident}
-      windowMinutes={focusWindow} onWindowChange={onFocusWindowChange} />
+    </div>
+      <button type="button" className="secondary-button ai-summary-toggle" aria-expanded={showAiSummary}
+        aria-controls="dashboard-ai-summary" onClick={onToggleAiSummary}>
+        <Icon name="spark" size={16} />
+        <span>{showAiSummary ? "Скрыть ИИ-саммари" : "Показать ИИ-саммари"}</span>
+      </button>
+    </div>
+    <div id="dashboard-ai-summary" hidden={!showAiSummary}>
+      {showAiSummary && <AiOverview incidents={incidents} now={now} onSelectIncident={onSelectIncident}
+        windowMinutes={focusWindow} onWindowChange={onFocusWindowChange} />}
+    </div>
     <OverviewStats criticalCount={metrics.criticalCount} riskCount={metrics.riskCount}
       nearestRiskSla={metrics.nearestRiskSla} workloadCount={metrics.workloadCount}
       resolvedMetCount={metrics.resolvedMetCount} resolvedWithDeadlineCount={metrics.resolvedWithDeadlineCount} />
