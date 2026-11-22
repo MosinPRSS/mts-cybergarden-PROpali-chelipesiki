@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import type { Incident } from "../../../domain/incidents/types.ts";
 import type { Team } from "../../../domain/teams/types.ts";
 import { Icon } from "../common/Icon";
-import { getRecommendedIncidentsForTeam } from "../../../domain/teams/matching.ts";
 import { isIncidentActive, getIncidentGroups, getPrimaryGroup } from "../../../domain/incidents/groups.ts";
 import { getGroupBadgeClass } from "../../formatters.ts";
 
@@ -34,11 +33,6 @@ export function TeamCard({
     [assignedActiveIncidents]
   );
 
-  // AI-recommended unassigned / sitting-on-coordinator incidents for this team
-  const recommendations = useMemo(
-    () => getRecommendedIncidentsForTeam(team, incidents),
-    [team, incidents]
-  );
 
   const statusLabel = {
     on_duty: "На дежурстве 24/7",

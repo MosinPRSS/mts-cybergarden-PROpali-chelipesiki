@@ -22,7 +22,7 @@ export const browserServices: AppServices = {
     },
   },
   incidents: { list: fetchIncidents, resolve: resolveIncident, undoResolve: undoResolveIncident, close: closeIncident, assign: assignIncident, subscribe: subscribeToIncidents },
-  analysis: { dashboard: fetchDashboardSummary, incident: fetchIncidentSummary, recommendTeam: fetchTeamRecommendation, recommendForTeam: fetchIncidentsForTeam, fetchIncidentsForTeam },
+  analysis: { dashboard: fetchDashboardSummary, incident: fetchIncidentSummary, recommendTeam: fetchTeamRecommendation, recommendForTeam: fetchIncidentsForTeam },
   notifications: { load: loadNotifications, save: saveNotifications },
   sound: { play: playChime },
   lifecycle: { onVisible },
