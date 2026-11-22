@@ -346,7 +346,7 @@
           "incidents"
         ],
         "summary": "Отметить инцидент как решённый",
-        "description": "Переводит инцидент в статус Resolved, фиксирует дату завершения и уведомляет подписчиков через SSE.",
+        "description": "Переводит инцидент в статус Research, фиксирует дату завершения и уведомляет подписчиков через SSE.",
         "operationId": "resolve_incident_api_incidents__incident_id__resolve_post",
         "security": [
           {
@@ -381,6 +381,120 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{incident_id}/undo-resolve": {
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Вернуть инцидент из исследования в работу",
+        "operationId": "undo_resolution_api_incidents__incident_id__undo_resolve_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentUndoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{incident_id}/close": {
+      "post": {
+        "tags": [
+          "incidents"
+        ],
+        "summary": "Закрыть исследование и отправить в историю",
+        "operationId": "close_incident_api_incidents__incident_id__close_post",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "incident_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Incident Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentUndoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentResponse"
                 }
               }
             }
@@ -1500,6 +1614,52 @@
             "type": "string",
             "title": "Solution"
           },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed By"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "undo_resolve_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Undo Resolve Until"
+          },
           "status": {
             "$ref": "#/components/schemas/IncidentState",
             "description": "Тот же статус, что stateEnum; никогда не приоритет"
@@ -1689,6 +1849,10 @@
       },
       "IncidentSummary": {
         "properties": {
+          "next_step": {
+            "type": "string",
+            "title": "Next Step"
+          },
           "incident_id": {
             "type": "string",
             "title": "Incident Id"
@@ -1724,6 +1888,7 @@
         },
         "type": "object",
         "required": [
+          "next_step",
           "incident_id",
           "summary",
           "related_incidents_used",
@@ -1732,6 +1897,20 @@
           "incident_updated_at"
         ],
         "title": "IncidentSummary"
+      },
+      "IncidentUndoRequest": {
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_at"
+        ],
+        "title": "IncidentUndoRequest"
       },
       "LoginRequest": {
         "properties": {

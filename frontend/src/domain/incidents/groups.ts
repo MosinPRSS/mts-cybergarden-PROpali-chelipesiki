@@ -8,6 +8,7 @@ export const SIGNIFICANCE_ORDER = [
 ];
 
 export function getIncidentGroups(incident: Incident): string[] {
+  if (incident.status === "Resolved") return ["Исследование ситуации"];
   if (Array.isArray(incident.groups)) {
     return incident.groups;
   }
@@ -58,6 +59,7 @@ export function getPrimaryGroup(incident: Incident): string {
 }
 
 export function getIncidentBoardGroups(incident: Incident): string[] {
+  if (["Research", "Resolved"].includes(incident.status || "")) return ["Исследование ситуации"];
   const groups = getIncidentGroups(incident);
   return groups.length ? [getPrimaryGroup(incident)] : [];
 }

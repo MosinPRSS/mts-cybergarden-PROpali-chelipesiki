@@ -251,3 +251,78 @@ test("team incident AI filtering runs on demand and carries confirmation on assi
   await act(async () => view.container.querySelector(".assign-confirm-btn").click());
   assert.deepEqual(assigned, [["fits", team.name, true]]);
 });
+
+test("incident brief shows a short problem and next step separately", async (t) => {
+  const { IncidentAnalysis } = await load("presentation/components/dashboard/IncidentAnalysis.tsx");
+  const incident = { ...row("BRIEF", 15), updated: new Date(now).toISOString() };
+  let calls = 0;
+  const services = defaults({ analysis: { incident: async () => {
+    calls++;
+    return { incident_id: incident.id, incident_updated_at: incident.updated, generated_at: incident.updated,
+      summary: "Ошибки авторизации.", next_step: "Уточните масштаб сбоя у ответственного.",
+      related_incidents_used: [], limitations: [] };
+  } } });
+  const view = await render(t, createElement(IncidentAnalysis, { incident }), services);
+  assert.equal(calls, 0);
+  await act(async () => view.container.querySelector("button").click());
+  assert.match(view.container.textContent, /Проблема: Ошибки авторизации/);
+  assert.match(view.container.textContent, /Следующий шаг: Уточните масштаб/);
+  assert.doesNotMatch(view.container.textContent, /Похожий случай/);
+});
+
+test("teams with active incidents counts only teams present in the registry", async (t) => {
+  const { TeamsView } = await load("presentation/components/teams/TeamsView.tsx");
+  const { TEAMS_DATA } = await load("data/teams.ts");
+  const incidents = [
+    { ...row("one", 5), team: TEAMS_DATA[1].name },
+    { ...row("duplicate", 5), team: TEAMS_DATA[1].name },
+    { ...row("two", 5), team: TEAMS_DATA[2].name },
+    { ...row("resolved", 5), team: TEAMS_DATA[3].name, is_active: false, is_resolved: true, status: "Resolved" },
+    ...Array.from({ length: 18 }, (_, index) => ({ ...row(`external-${index}`, 5), team: `Команда ITSM ${index}` })),
+  ];
+  const view = await render(t, createElement(TeamsView, { incidents, onSelectIncident() {} }), defaults());
+  const filter = [...view.container.querySelectorAll(".pill-btn")].find((button) => button.textContent.includes("С инцидентами в работе"));
+  assert.equal(filter.querySelector("span").textContent, "2");
+  await act(async () => filter.click());
+  assert.equal(view.container.querySelector(".teams-cards-grid").children.length, 2);
+});
+
+test("completion offers undo only after success and expires after thirty seconds", async (t) => {
+  const { useIncidentActions } = await load("application/incidents/useIncidentActions.ts");
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now });
+  const incident = row("UNDO", 5);
+  const saved = { ...incident, status: "Resolved", updated: new Date(now).toISOString(),
+    undo_resolve_until: new Date(now + 30000).toISOString() };
+  const applied = [], failures = [], requests = [];
+  const view = await hook(t, useIncidentActions, defaults({ incidents: {
+    resolve: async () => saved, undoResolve: async (...args) => { requests.push(args); return incident; }
+  } }), [(item) => applied.push(item), (item) => failures.push(item), () => {}]);
+  await act(async () => view.value.resolve(incident));
+  assert.equal(view.value.undoable.length, 1);
+  await act(async () => view.value.undoResolve(saved));
+  assert.deepEqual(requests, [[incident.id, saved.updated]]);
+  assert.equal(view.value.undoable.length, 0);
+  assert.equal(applied.at(-1).status, "Assigned");
+  await act(async () => view.value.resolve(incident));
+  await tick(t, 30000);
+  assert.equal(view.value.undoable.length, 0);
+  assert.deepEqual(failures, []);
+});
+
+test("research exposes undo and final closure, and closed cards retain both authors", async (t) => {
+  const research = { ...row("LIFECYCLE", 5), status: "Research", is_active: false, is_resolved: true,
+    resolved_by: "Иванов Иван", groups: ["Исследование ситуации"] };
+  const undone = [], closed = [];
+  const props = { incident: research, seconds: 0, onClose() {},
+    onUndoResolve: (item) => undone.push(item.id), onCloseIncident: (item) => closed.push(item.id) };
+  const view = await render(t, createElement(Drawer, props), defaults());
+  assert.match(view.container.textContent, /Решил: Иванов Иван/);
+  const buttons = [...view.container.querySelectorAll(".drawer-actions button")];
+  await act(async () => buttons.find((item) => item.textContent.includes("Вернуть в работу")).click());
+  await act(async () => buttons.find((item) => item.textContent === "Закрыть инцидент").click());
+  assert.deepEqual(undone, [research.id]); assert.deepEqual(closed, [research.id]);
+  await view.update(createElement(Drawer, { ...props, incident: { ...research, status: "Closed", groups: [], closed_by: "Петров Пётр" } }));
+  assert.match(view.container.textContent, /Решил: Иванов Иван/);
+  assert.match(view.container.textContent, /Закрыл: Петров Пётр/);
+  assert.doesNotMatch(view.container.querySelector(".drawer-actions").textContent, /Вернуть в работу|Закрыть инцидент/);
+});

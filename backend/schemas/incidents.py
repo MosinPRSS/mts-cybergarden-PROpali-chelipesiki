@@ -27,11 +27,19 @@ class IncidentAssignRequest(BaseModel):
     team_selected_with_ai: bool = Field(default=False, strict=True, description="Координатор подтвердил команду из ИИ-подбора")
 
 
+class IncidentUndoRequest(BaseModel):
+    updated_at: datetime
+
+
 class ErrorResponse(BaseModel):
     detail: str
 
 
 class IncidentResponse(IncidentSource):
+    resolved_by: str | None = None
+    closed_by: str | None = None
+    closed_at: datetime | None = None
+    undo_resolve_until: datetime | None = None
     status: IncidentState = Field(description="Тот же статус, что stateEnum; никогда не приоритет")
     is_active: bool
     is_resolved: bool

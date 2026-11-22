@@ -46,7 +46,7 @@ test("each incident has one board column selected by group significance", () => 
   const high = incident({ status: "Assigned", groups: ["На координаторах", "Высокий приоритет"] });
   assert.deepEqual(groups.getIncidentBoardGroups(critical), ["Критические"]);
   assert.deepEqual(groups.getIncidentBoardGroups(high), ["На координаторах"]);
-  assert.deepEqual(groups.getIncidentBoardGroups(incident({ status: "Research", groups: ["Исследование ситуации", "На координаторах"] })), ["На координаторах"]);
+  assert.deepEqual(groups.getIncidentBoardGroups(incident({ status: "Research", groups: ["Исследование ситуации", "На координаторах"] })), ["Исследование ситуации"]);
   assert.deepEqual(groups.getIncidentBoardGroups(incident({ groups: [] })), []);
   assert.deepEqual(groups.getIncidentGroups(critical), ["Критические", "На координаторах"]);
 });
@@ -61,7 +61,7 @@ test("Research can belong to coordinator group without being active critical", (
 test("high priority is separate from resolved and closed statuses", () => {
   assert.deepEqual(groups.getIncidentGroups(incident({ priorityId: 3, status: "WorkInProgress" })), ["Высокий приоритет"]);
   for (const status of ["Resolved", "Closed"]) {
-    assert.deepEqual(groups.getIncidentGroups(incident({ priorityId: 4, status })), []);
+    assert.deepEqual(groups.getIncidentGroups(incident({ priorityId: 4, status })), status === "Resolved" ? ["Исследование ситуации"] : []);
   }
 });
 
@@ -106,7 +106,7 @@ test("isResolvedOlderThanDay detects resolved incidents older than 24h", () => {
   // Resolved 2 hours ago (< 24h)
   assert.equal(
     groups.isResolvedOlderThanDay(
-      incident({ status: "Resolved", is_resolved: true, completionDate: "2026-11-21T10:00:00Z" }),
+      incident({ status: "Closed", is_resolved: true, completionDate: "2026-11-21T10:00:00Z" }),
       now
     ),
     false
@@ -114,7 +114,7 @@ test("isResolvedOlderThanDay detects resolved incidents older than 24h", () => {
   // Resolved exactly 24 hours ago
   assert.equal(
     groups.isResolvedOlderThanDay(
-      incident({ status: "Resolved", is_resolved: true, completionDate: "2026-11-20T12:00:00Z" }),
+      incident({ status: "Closed", is_resolved: true, completionDate: "2026-11-20T12:00:00Z" }),
       now
     ),
     true
@@ -122,7 +122,7 @@ test("isResolvedOlderThanDay detects resolved incidents older than 24h", () => {
   // Resolved 36 hours ago (> 24h)
   assert.equal(
     groups.isResolvedOlderThanDay(
-      incident({ status: "Resolved", is_resolved: true, completionDate: "2026-11-20T00:00:00Z" }),
+      incident({ status: "Closed", is_resolved: true, completionDate: "2026-11-20T00:00:00Z" }),
       now
     ),
     true
@@ -152,9 +152,9 @@ test("main and team views include research requiring coordinator attention", () 
     incident({ status: "Research", is_active: false, groups: ["Исследование ситуации", "На координаторах"] }),
     incident({ is_active: false }),
   ];
-  assert.equal(rows.filter((row) => matchesIncidentView(row, "all")).length, 3);
+  assert.equal(rows.filter((row) => matchesIncidentView(row, "all")).length, 4);
   assert.equal(rows.filter((row) => matchesIncidentView(row, "team")).length, 2);
-  assert.equal(rows.filter((row) => matchesIncidentView(row, "research")).length, 1);
+  assert.equal(rows.filter((row) => matchesIncidentView(row, "research")).length, 2);
 });
 
 test("expired and imminent deadlines lead, then priority and oldest first, resolved last", () => {

@@ -129,7 +129,7 @@ def incident_groups(state: IncidentState | str, priority_id: int, team: str) -> 
         groups.append("На координаторах")
     if active and priority_id == 3:
         groups.append("Высокий приоритет")
-    if state == IncidentState.RESEARCH:
+    if state in (IncidentState.RESEARCH, IncidentState.RESOLVED):
         groups.append("Исследование ситуации")
     return groups
 

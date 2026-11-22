@@ -26,6 +26,85 @@ from tests.helpers import ASGIConnection, authorize_test_user
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "Run python -m scripts.test_database for PostgreSQL tests")
 class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
+    async def test_completion_undo_restores_previous_state_and_records_both_actions(self):
+        from models import IncidentAction
+        await self.seed()
+        identifier = self.records[0]["id"]
+        path = f"/api/incidents/{identifier}"
+        before = (await self.auth_request(path))[2]
+        source = (await self.auth_request(path + "/source"))[2]
+        status, _, resolved = await self.auth_request(path + "/resolve", method="POST")
+        self.assertEqual(status, 200)
+        self.assertIsNotNone(resolved["undo_resolve_until"])
+        _, _, repeated = await self.auth_request(path + "/resolve", method="POST")
+        self.assertEqual(repeated["updated"], resolved["updated"])
+        self.assertIsNone(repeated["undo_resolve_until"])
+        status, _, restored = await self.auth_request(path + "/undo-resolve", method="POST",
+            data={"updated_at": resolved["updated"]})
+        self.assertEqual(status, 200)
+        for key in ("stateEnum", "stateId", "state", "completionDate", "team", "assignee"):
+            self.assertEqual(restored[key], before[key])
+        self.assertEqual((await self.auth_request(path + "/source"))[2], source)
+        self.assertEqual((await self.auth_request(path + "/undo-resolve", method="POST",
+            data={"updated_at": resolved["updated"]}))[0], 409)
+        async with self.sessions() as db:
+            actions = (await db.scalars(select(IncidentAction).where(IncidentAction.incident_id == identifier)
+                .order_by(IncidentAction.occurred_at))).all()
+            self.assertEqual([item.action for item in actions], ["resolve", "undo_resolve"])
+            self.assertTrue(all(item.actor_id == 1 and item.actor_login == "test" for item in actions))
+
+    async def test_research_undo_remains_available_and_preserves_new_assignments(self):
+        from models import IncidentAction
+        await self.seed()
+        path = f'/api/incidents/{self.records[0]["id"]}'
+        _, _, resolved = await self.auth_request(path + "/resolve", method="POST")
+        async with self.sessions.begin() as db:
+            action = await db.scalar(select(IncidentAction))
+            action.occurred_at -= timedelta(days=3)
+        await self.auth_request(path + "/assign", method="POST", data={"team": "Новая команда"})
+        self.assertEqual((await self.auth_request(path + "/undo-resolve", method="POST",
+            data={"updated_at": resolved["updated"]}))[0], 409)
+        current = (await self.auth_request(path))[2]
+        status, _, restored = await self.auth_request(path + "/undo-resolve", method="POST", data={"updated_at": current["updated"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(restored["team"], "Новая команда")
+        self.assertIsNone(restored["resolved_by"])
+        self.assertEqual(restored["status"], self.records[0]["stateEnum"])
+
+    async def test_research_close_keeps_resolution_and_closure_authors(self):
+        from models import IncidentAction
+        await self.seed()
+        path = f'/api/incidents/{self.records[0]["id"]}'
+        before = (await self.auth_request(path))[2]
+        self.assertEqual((await self.auth_request(path + "/close", method="POST", data={"updated_at": before["updated"]}))[0], 409)
+        _, _, research = await self.auth_request(path + "/resolve", method="POST")
+        self.assertEqual(research["status"], "Research")
+        self.assertEqual(research["resolved_by"], "User Test")
+        self.assertIn("Исследование ситуации", research["groups"])
+        from core.auth import get_current_session
+        current_session = await app.dependency_overrides[get_current_session]()
+        current_session.user.name = "Другой"
+        status, _, closed = await self.auth_request(path + "/close", method="POST", data={"updated_at": research["updated"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(closed["status"], "Closed")
+        self.assertEqual(closed["resolved_by"], "User Test")
+        self.assertEqual(closed["closed_by"], "User Другой")
+        self.assertEqual(closed["completionDate"], research["completionDate"])
+        self.assertIsNotNone(closed["closed_at"])
+        reloaded = (await self.auth_request(path))[2]
+        self.assertEqual(reloaded["closed_by"], "User Другой")
+        self.assertEqual((await self.auth_request(path + "/undo-resolve", method="POST", data={"updated_at": closed["updated"]}))[0], 409)
+        async with self.sessions() as db:
+            self.assertEqual([item.action for item in (await db.scalars(select(IncidentAction).order_by(IncidentAction.occurred_at))).all()], ["resolve", "close"])
+
+    async def test_concurrent_undo_requests_only_restore_once(self):
+        await self.seed()
+        path = f'/api/incidents/{self.records[0]["id"]}'
+        _, _, resolved = await self.auth_request(path + "/resolve", method="POST")
+        responses = await asyncio.gather(*(self.auth_request(path + "/undo-resolve", method="POST",
+            data={"updated_at": resolved["updated"]}) for _ in range(2)))
+        self.assertEqual(sorted(item[0] for item in responses), [200, 409])
+
     async def test_team_incident_selection_reads_database_and_batches_all_eligible_incidents(self):
         from unittest.mock import patch
         from ai_proto import generate_pb2 as pb
@@ -132,7 +211,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await db.get(Incident, identifier)).assigned_group_name, "Исполнители")
 
     async def assert_serialized_actions(self, first_path, second_path, *, first_data=None,
-                                        second_data=None, expected_state="Resolved", expected_team="Исполнители"):
+                                        second_data=None, expected_state="Research", expected_team="Исполнители"):
         from unittest.mock import patch
         from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -258,8 +337,8 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(assigned["groups"], ["Критические"])
             status, _, resolved = await self.auth_request(f'/api/incidents/{raw["id"]}/resolve', method="POST")
             self.assertEqual(status, 200)
-            self.assertEqual(resolved["groups"], [])
-            self.assertEqual(resolved["status"], "Resolved")
+            self.assertEqual(resolved["groups"], ["Исследование ситуации"])
+            self.assertEqual(resolved["status"], "Research")
 
     async def test_single_summary_api_rejects_stale_results_and_handles_provider_failure(self):
         from unittest.mock import AsyncMock, patch
@@ -274,7 +353,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         async def generate(request):
             nonlocal changed_context
             self.assertLessEqual(len(request.related_incidents), 5)
-            response = pb.GenerateIncidentSummaryResponse(incident_id=target_id, summary="Проверьте восстановление",
+            response = pb.GenerateIncidentSummaryResponse(incident_id=target_id, summary="Ошибка авторизации.", next_step="Уточните ход восстановления.",
                 incident_updated_at=request.incident.updated_at)
             response.generated_at.FromDatetime(datetime.now(timezone.utc))
             if changed_context is not None:
@@ -391,7 +470,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             )
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
         self.assertEqual(differences, [])
-        self.assertEqual(revision, "0007")
+        self.assertEqual(revision, "0009")
 
     async def test_import_preserves_all_original_fields_without_creating_accounts(self):
         self.assertEqual(await self.seed(), {"incidents_created": 44, "incidents_updated": 0, "incidents_unchanged": 0})
@@ -486,7 +565,7 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
         incidents = json.loads(body)
         self.assertEqual(len(incidents), len(self.retained_records))
         counts = {name: sum(name in row["groups"] for row in incidents) for name in ["Критические", "На координаторах", "Высокий приоритет", "Исследование ситуации"]}
-        self.assertEqual(list(counts.values()), [0, 2, 1, 5])
+        self.assertEqual(list(counts.values()), [0, 2, 1, 15])
         self.assertEqual(sum(row["is_active"] for row in incidents), 24)
         for incident in incidents:
             self.assertNotIn("pass_hash", incident)

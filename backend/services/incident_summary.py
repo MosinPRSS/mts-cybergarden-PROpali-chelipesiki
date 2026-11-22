@@ -18,7 +18,8 @@ from services.dashboard_summary import incident_snapshot
 
 def _words(incident):
     text = " ".join([incident.header, incident.short_description, incident.description])
-    return {word for word in re.findall(r"[\w]+", text.lower()) if len(word) >= 4}
+    boilerplate = {"автоматический", "алерт", "зафиксировано", "отклонение", "работе", "сервиса", "сервисе", "продукта", "инцидент", "наблюдается"}
+    return {word for word in re.findall(r"[\w]+", text.lower()) if len(word) >= 4 and word not in boilerplate}
 
 
 def _same_entity(target, candidate, name, identifier):
@@ -41,7 +42,9 @@ def related_context(target, candidates):
         similar = overlap >= 2 and similarity >= 0.12
         product = _same_entity(target, item, "product_name", "product_id")
         service = _same_entity(target, item, "service", "service_id")
-        if not (similar or product or service):
+        useful_solution = (item.state_enum in RESOLVED_STATES and bool(item.solution.strip())
+            and item.solution.strip().lower().rstrip(".") not in {"расследование ведётся", "расследование ведется", "в работе", "нет"})
+        if not (useful_solution and similar and (service or (product and similarity >= 0.35))):
             continue
         related = pb.RelatedIncident(incident=incident_snapshot(item))
         if similar:
@@ -86,14 +89,15 @@ class IncidentSummaryService:
             result = await generate_incident_summary(request)
             allowed = {item.incident.id for item in request.related_incidents}
             used = [item.incident_id for item in result.related_incidents_used]
-            if (result.incident_id != request.incident.id or not result.summary.strip()
+            if (result.incident_id != request.incident.id or not result.summary.strip() or len(result.summary) > 180
+                    or not result.next_step.strip() or len(result.next_step) > 180
                     or not result.HasField("generated_at")
                     or result.incident_updated_at != request.incident.updated_at
                     or len(used) != len(set(used)) or not set(used) <= allowed
                     or any(not item.contribution.strip() for item in result.related_incidents_used)):
                 raise ValueError("Unexpected incident summary contract")
             response = IncidentSummary(
-                incident_id=result.incident_id, summary=result.summary,
+                incident_id=result.incident_id, summary=result.summary, next_step=result.next_step,
                 related_incidents_used=[RelatedSummary(incident_id=item.incident_id, contribution=item.contribution)
                                         for item in result.related_incidents_used],
                 limitations=list(result.limitations),

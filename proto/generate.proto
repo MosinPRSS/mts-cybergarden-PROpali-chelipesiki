@@ -196,6 +196,7 @@ enum RelationKind {
 }
 
 message GenerateIncidentSummaryResponse {
+  string next_step = 7;
   // ID основного инцидента.
   string incident_id = 1;
   // Одна сводка с отделением фактов от предположений.

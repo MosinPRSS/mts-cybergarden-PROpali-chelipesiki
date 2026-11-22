@@ -1,6 +1,6 @@
 import type { Incident, IncidentView } from "../../domain/incidents/types.ts";
-import { getIncidentGroups, getPrimaryGroup, isIncidentActive } from "../../domain/incidents/groups.ts";
-import { matchesIncidentView } from "../../domain/incidents/selectors.ts";
+import { getIncidentGroups, isIncidentActive } from "../../domain/incidents/groups.ts";
+import { matchesIncidentView, isIncidentResearch } from "../../domain/incidents/selectors.ts";
 import { formatSla } from "../formatters.ts";
 
 export function filterBoardIncidents(incidents: Incident[], query: string, view: IncidentView): Incident[] {
@@ -21,13 +21,13 @@ export function getDashboardMetrics(incidents: Incident[], slaFor: (item: Incide
     workloadCount: active.length,
     resolvedMetCount: incidents.filter((item) => item.sla_state === "met").length,
     resolvedWithDeadlineCount: incidents.filter((item) => item.sla_state === "met" || item.sla_state === "breached").length,
-    totalCount: incidents.filter((item) => matchesIncidentView(item, "all") && getIncidentGroups(item).length > 0 && getPrimaryGroup(item) !== "Исследование ситуации").length,
+    totalCount: incidents.filter((item) => matchesIncidentView(item, "all") && getIncidentGroups(item).length > 0 && !isIncidentResearch(item)).length,
     researchCount: incidents.filter((item) => matchesIncidentView(item, "research")).length,
     myTeamCount: incidents.filter((item) => matchesIncidentView(item, "team")).length,
   };
 }
 
 export function filterIncidentHistory(incidents: Incident[], query: string): Incident[] {
-  return incidents.filter((item) => ["Resolved", "Closed"].includes(item.status || "") &&
+  return incidents.filter((item) => item.status === "Closed" &&
     `${item.id} ${item.service} ${item.summary}`.toLowerCase().includes(query.toLowerCase()));
 }

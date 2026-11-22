@@ -23,6 +23,7 @@ export interface DashboardSummary {
 }
 
 export interface IncidentSummary {
+  next_step: string;
   incident_id: string;
   summary: string;
   related_incidents_used: { incident_id: string; contribution: string }[];

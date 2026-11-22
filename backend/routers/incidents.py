@@ -1,17 +1,19 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
+from uuid import uuid4
+from sqlalchemy import select
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
-from core.auth import get_current_session, require_operator
+from core.auth import get_current_session, require_operator, CurrentSession
 from domain.incidents import IncidentState
-from models import Incident
+from models import Incident, IncidentAction
 from services.incidents import import_incidents, load_incident_snapshot, publish_incident_snapshot
-from schemas.incidents import ErrorResponse, IncidentAssignRequest, IncidentCreate, IncidentCreateResponse, IncidentResponse
+from schemas.incidents import ErrorResponse, IncidentUndoRequest, IncidentAssignRequest, IncidentCreate, IncidentCreateResponse, IncidentResponse
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[Depends(get_current_session)])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -42,32 +44,104 @@ async def list_incidents(db: DatabaseSession):
     dependencies=[Depends(require_operator)],
     response_model=IncidentResponse,
     summary="Отметить инцидент как решённый",
-    description="Переводит инцидент в статус Resolved, фиксирует дату завершения и уведомляет подписчиков через SSE.",
+    description="Переводит инцидент в статус Research, фиксирует дату завершения и уведомляет подписчиков через SSE.",
     responses={404: {"model": ErrorResponse, "description": "Инцидент не найден"}},
 )
-async def resolve_incident(incident_id: str, db: DatabaseSession):
+async def resolve_incident(incident_id: str, db: DatabaseSession, session: CurrentSession):
     incident = await get_incident_or_404(db, incident_id, for_update=True)
 
+    if incident.state_enum in (IncidentState.RESOLVED, IncidentState.CLOSED, IncidentState.RESEARCH):
+        return incident.to_dict()
+    previous = {"state_enum": incident.state_enum.value, "state_id": incident.state_id,
+        "state": incident.state, "completion_date": incident.completion_date.isoformat() if incident.completion_date else None,
+        "source_payload": deepcopy(incident.source_payload), "resolved_by": incident.resolved_by}
     now = datetime.now(timezone.utc)
-    incident.state_enum = IncidentState.RESOLVED
-    incident.state_id = 7
-    incident.state = "Решён"
+    incident.state_enum = IncidentState.RESEARCH
+    incident.state_id = 20
+    incident.state = "Исследование ситуации"
+    incident.resolved_by = session.user.to_dict()["full_name"]
     if incident.completion_date is None:
         incident.completion_date = now
     incident.updated_at = now
 
     payload = deepcopy(incident.source_payload or {})
-    payload["stateEnum"] = "Resolved"
-    payload["stateId"] = 7
-    payload["state"] = "Решён"
+    payload["stateEnum"] = "Research"
+    payload["stateId"] = 20
+    payload["state"] = "Исследование ситуации"
     payload["completionDate"] = incident.completion_date.isoformat()
     incident.source_payload = payload
 
+    db.add(IncidentAction(id=str(uuid4()), incident_id=incident.id, actor_id=session.user.id,
+        actor_login=session.user.login, action="resolve", previous=previous, incident_version=now, occurred_at=now))
     await db.commit()
     await db.refresh(incident)
 
     await publish_incident_snapshot(db)
 
+    result = incident.to_dict()
+    result["undo_resolve_until"] = now + timedelta(seconds=30)
+    return result
+
+
+@router.post("/{incident_id}/undo-resolve", response_model=IncidentResponse,
+             dependencies=[Depends(require_operator)], summary="Вернуть инцидент из исследования в работу")
+async def undo_resolution(incident_id: str, payload: IncidentUndoRequest, db: DatabaseSession, session: CurrentSession):
+    incident = await get_incident_or_404(db, incident_id, for_update=True)
+    now = datetime.now(timezone.utc)
+    if payload.updated_at.tzinfo is None:
+        raise HTTPException(422, "Версия должна содержать часовой пояс.")
+    if incident.state_enum not in (IncidentState.RESEARCH, IncidentState.RESOLVED) or incident.updated_at != payload.updated_at:
+        raise HTTPException(409, "Инцидент уже изменён. Отмена недоступна.")
+    action = await db.scalar(select(IncidentAction).where(IncidentAction.incident_id == incident_id,
+        IncidentAction.action == "resolve").order_by(IncidentAction.occurred_at.desc()).limit(1))
+    previous = action.previous if action else {"state_enum": "Assigned", "state_id": 0,
+        "state": "Назначен", "completion_date": None, "resolved_by": None}
+    incident.state_enum = IncidentState(previous["state_enum"])
+    incident.state_id = previous["state_id"]
+    incident.state = previous["state"]
+    incident.completion_date = datetime.fromisoformat(previous["completion_date"]) if previous["completion_date"] else None
+    incident.resolved_by = previous.get("resolved_by")
+    source = deepcopy(incident.source_payload)
+    for key, value in {"stateEnum": incident.state_enum.value, "stateId": incident.state_id,
+        "state": incident.state, "completionDate": incident.completion_date.isoformat() if incident.completion_date else None}.items():
+        old_source = previous.get("source_payload", {})
+        if action and key not in old_source:
+            source.pop(key, None)
+        else:
+            source[key] = old_source.get(key, value)
+    incident.source_payload = source
+    incident.updated_at = now
+    db.add(IncidentAction(id=str(uuid4()), incident_id=incident.id, actor_id=session.user.id,
+        actor_login=session.user.login, action="undo_resolve", previous={"resolution_id": action.id if action else None},
+        incident_version=now, occurred_at=now))
+    await db.commit()
+    await db.refresh(incident)
+    await publish_incident_snapshot(db)
+    return incident.to_dict()
+
+
+@router.post("/{incident_id}/close", response_model=IncidentResponse,
+             dependencies=[Depends(require_operator)], summary="Закрыть исследование и отправить в историю")
+async def close_incident(incident_id: str, payload: IncidentUndoRequest, db: DatabaseSession, session: CurrentSession):
+    incident = await get_incident_or_404(db, incident_id, for_update=True)
+    if incident.updated_at != payload.updated_at or incident.state_enum not in (IncidentState.RESEARCH, IncidentState.RESOLVED):
+        raise HTTPException(409, "Закрыть можно только актуальный инцидент из исследования.")
+    now = datetime.now(timezone.utc)
+    previous = {"state_enum": incident.state_enum.value, "resolved_by": incident.resolved_by}
+    incident.state_enum = IncidentState.CLOSED
+    incident.state_id = 10
+    incident.state = "Закрыт"
+    incident.closed_by = session.user.to_dict()["full_name"]
+    incident.closed_at = now
+    incident.updated_at = now
+    source = deepcopy(incident.source_payload)
+    source.update(stateEnum="Closed", stateId=10, state="Закрыт")
+    incident.source_payload = source
+    db.add(IncidentAction(id=str(uuid4()), incident_id=incident.id, actor_id=session.user.id,
+        actor_login=session.user.login, action="close", previous=previous, incident_version=now, occurred_at=now))
+    await db.commit()
+    await db.refresh(incident)
+    await publish_incident_snapshot(db)
     return incident.to_dict()
 
 

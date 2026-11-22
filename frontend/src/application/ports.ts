@@ -24,6 +24,8 @@ export interface IncidentStreamObserver {
 export interface IncidentGateway {
   list(signal?: AbortSignal): Promise<Incident[]>;
   resolve(id: string): Promise<Incident>;
+  close(id: string, updated: string): Promise<Incident>;
+  undoResolve(id: string, updated: string): Promise<Incident>;
   assign(id: string, team: string, assignee?: string, selectedWithAi?: boolean): Promise<Incident>;
   subscribe(observer: IncidentStreamObserver): Dispose;
 }

@@ -18,11 +18,11 @@ test("main board has three columns with unique cards; research remains a separat
     ["Критические", "На координаторах", "Высокий приоритет"]);
   assert.deepEqual(getBoardColumns(rows, "research").map((column) => column.key), ["Исследование ситуации"]);
   assert.deepEqual(filterBoardIncidents(rows, "", "team").map((item) => item.id), ["critical", "research"]);
-  assert.deepEqual(filterBoardIncidents(rows, "исследование", "all").map((item) => item.id), ["research"]);
-  assert.deepEqual(filterIncidentHistory(rows, "RESOLVED").map((item) => item.id), ["resolved"]);
+  assert.deepEqual(filterBoardIncidents(rows, "исследование", "all").map((item) => item.id), ["research", "resolved"]);
+  assert.deepEqual(filterIncidentHistory(rows, "RESOLVED").map((item) => item.id), []);
   const columns = getBoardColumns(rows, "all");
   const visible = columns.flatMap((column) => rows.filter((item) => getIncidentBoardGroups(item).includes(column.key)));
-  assert.deepEqual(visible.map((item) => item.id), ["critical", "research"]);
+  assert.deepEqual(visible.map((item) => item.id), ["critical"]);
   assert.equal(new Set(visible.map((item) => item.id)).size, visible.length);
   assert.equal(getPrimaryGroup(rows[1]), "На координаторах");
   assert.equal(NAVIGATION_ITEMS.some((item) => item.key === "analytics" && item.label === "Ассистент"), true);
@@ -44,7 +44,7 @@ test("metrics count unique incidents while preserving SLA and overlapping group 
   const before = structuredClone(rows);
   assert.deepEqual(getDashboardMetrics(rows, (item) => item.sla), {
     criticalCount: 1, riskCount: 1, nearestRiskSla: "Просрочен на 0м 01с", workloadCount: 2,
-    resolvedMetCount: 1, resolvedWithDeadlineCount: 2, totalCount: 2, researchCount: 1, myTeamCount: 2,
+    resolvedMetCount: 1, resolvedWithDeadlineCount: 2, totalCount: 1, researchCount: 2, myTeamCount: 2,
   });
   assert.deepEqual(rows, before);
 });

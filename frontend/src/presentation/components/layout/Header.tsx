@@ -37,6 +37,7 @@ export function Header({
 }: HeaderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const unreadCount = notifications.filter((item) => !item.read).length;
 
@@ -71,16 +72,21 @@ export function Header({
         <b>Incident Command</b>
       </div>
 
-      <label className="search">
+      <div className="search">
         <Icon name="search" size={17} />
         <input
           id="search-box"
+          ref={searchRef}
+          aria-label="Поиск инцидентов"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="Поиск по ID, сервису, группе или описанию (⌘K)"
+          placeholder="Поиск по ID, сервису, группе или описанию"
         />
-        <kbd>⌘ K</kbd>
-      </label>
+        {query && <button type="button" className="search-clear" aria-label="Очистить поиск" title="Очистить поиск"
+          onClick={() => { onQueryChange(""); searchRef.current?.focus(); }}>
+          <Icon name="close" size={15} />
+        </button>}
+      </div>
 
       <div className="top-actions">
         <div className="system-health">

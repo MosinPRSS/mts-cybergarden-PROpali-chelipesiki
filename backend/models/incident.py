@@ -90,6 +90,9 @@ class Incident(Base):
     receiving_channel: Mapped[str] = mapped_column(String(255), nullable=False)
     solution: Mapped[str] = mapped_column(Text, nullable=False)
     source_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    resolved_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    closed_by: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ai_recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -114,6 +117,9 @@ class Incident(Base):
             "sla_state": sla_state,
             "area": self.scenario_name,
             "summary": self.header,
+            "resolved_by": self.resolved_by,
+            "closed_by": self.closed_by,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
             "team": self.assigned_group_name,
             "team_selected_with_ai": bool(self.team_selected_with_ai),
             "assignee": self.assigned_employee,

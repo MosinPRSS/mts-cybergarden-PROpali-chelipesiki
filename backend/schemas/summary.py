@@ -36,6 +36,7 @@ class RelatedSummary(BaseModel):
 
 
 class IncidentSummary(BaseModel):
+    next_step: str
     incident_id: str
     summary: str
     related_incidents_used: list[RelatedSummary]

@@ -20,7 +20,7 @@ export function useIncidentSummary(incident: Incident) {
     try {
       const data = await analysis.incident(incident.id, request.signal);
       if (request.signal.aborted) return;
-      if (Date.parse(data.incident_updated_at) !== Date.parse(incident.updated)) {
+      if (data.incident_id !== incident.id || Date.parse(data.incident_updated_at) !== Date.parse(incident.updated)) {
         throw new Error("Данные изменились. Обновите карточку и повторите анализ.");
       }
       setResult(data);

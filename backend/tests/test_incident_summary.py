@@ -27,17 +27,20 @@ class IncidentSummaryTests(unittest.IsolatedAsyncioTestCase):
         contexts = related_context(target, [target, unrelated, solved])
         self.assertEqual([item.incident.id for item in contexts], ["solved"])
         self.assertIn(pb.RELATION_KIND_PREVIOUS_SIMILAR_INCIDENT, [item.kind for item in contexts[0].relations])
-        self.assertEqual(len(related_context(target, [make_incident(str(i)) for i in range(12)])), 5)
+        self.assertEqual(related_context(target, [make_incident(str(i)) for i in range(12)]), [])
 
     async def test_cache_coalesces_and_invalidates_when_context_changes(self):
         target = make_incident()
         request = pb.GenerateIncidentSummaryRequest(incident=incident_snapshot(target))
         request.as_of.FromDatetime(NOW)
-        related = related_context(target, [make_incident("context")])[0]
+        context = make_incident("context")
+        context.state_enum = IncidentState.RESOLVED
+        context.solution = "Обновили сертификат"
+        related = related_context(target, [context])[0]
         request.related_incidents.add().CopyFrom(related)
 
         async def generate(sent):
-            result = pb.GenerateIncidentSummaryResponse(incident_id=target.id, summary="Проверьте восстановление",
+            result = pb.GenerateIncidentSummaryResponse(incident_id=target.id, summary="Ошибка авторизации.", next_step="Уточните ход восстановления.",
                 incident_updated_at=sent.incident.updated_at)
             result.generated_at.FromDatetime(NOW)
             return result

@@ -11,13 +11,15 @@ interface DrawerProps {
   incident: Incident;
   seconds: number | null;
   onClose: () => void;
+  onUndoResolve?: (incident: Incident) => void;
+  onCloseIncident?: (incident: Incident) => void;
   onResolve?: (incident: Incident) => void;
   onAssignTeam?: (incidentId: string, teamName: string, selectedWithAi?: boolean) => void;
   onSelectRelated?: (id: string) => void;
   saving?: boolean;
 }
 
-export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam, onSelectRelated, saving }: DrawerProps) {
+export function Drawer({ incident, seconds, onClose, onResolve, onUndoResolve, onCloseIncident, onAssignTeam, onSelectRelated, saving }: DrawerProps) {
   const [selectedTeamName, setSelectedTeamName] = useState(incident.team || "");
   const [isChangingTeam, setIsChangingTeam] = useState(false);
   const groups = getIncidentGroups(incident);
@@ -66,6 +68,12 @@ export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam, on
             <p>Назначение в команду: {incident.lastAssignmentToTeamDateTime || "—"}</p>
           </section>
           {incident.solution && <section className="drawer-section"><div className="section-title"><h3>Решение из выгрузки</h3></div><p>{incident.solution}</p></section>}
+          {["Research", "Resolved", "Closed"].includes(incident.status || "") && <section className="drawer-section">
+            <div className="section-title"><h3>Решение и закрытие</h3></div>
+            <p>Решил: <b>{incident.resolved_by || "Автор не указан в источнике"}</b></p>
+            {incident.status === "Closed" && <><p>Закрыл: <b>{incident.closed_by || "Автор не указан в источнике"}</b></p>
+              {incident.closed_at && <p>Дата закрытия: {new Date(incident.closed_at).toLocaleString("ru-RU")}</p>}</>}
+          </section>}
           <section className="drawer-section">
             <div className="section-title"><h3>Ответственные и команда</h3></div>
             <div className="owner-row">
@@ -135,6 +143,10 @@ export function Drawer({ incident, seconds, onClose, onResolve, onAssignTeam, on
           </section>
         </div>
         <div className="drawer-actions">
+          {["Research", "Resolved"].includes(incident.status || "") && <>
+            {onUndoResolve && <button className="secondary-button" disabled={saving} onClick={() => onUndoResolve(incident)}>Отменить решение · Вернуть в работу</button>}
+            {onCloseIncident && <button className="resolve-action" disabled={saving} onClick={() => onCloseIncident(incident)}>Закрыть инцидент</button>}
+          </>}
           {!isIncidentResolved(incident) && onResolve && (
             <button
               className="resolve-action"

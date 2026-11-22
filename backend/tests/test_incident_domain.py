@@ -73,7 +73,8 @@ class GroupTests(unittest.TestCase):
 
     def test_resolved_and_closed_are_not_research_or_active_high_priority(self):
         for state in ("Resolved", "Closed"):
-            self.assertEqual(incident_groups(state, 4, COORDINATOR_TEAM), [])
+            self.assertEqual(incident_groups(state, 4, COORDINATOR_TEAM),
+                ["Исследование ситуации"] if state == "Resolved" else [])
 
     def test_high_priority_is_three_and_urgency_does_not_make_it_critical(self):
         self.assertEqual(incident_groups("WorkInProgress", 3, "Другая команда"), ["Высокий приоритет"])

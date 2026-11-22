@@ -47,11 +47,8 @@ export function TeamsView({
 
   // Teams with active incidents
   const teamsWithActiveIncidents = useMemo(() => {
-    const set = new Set<string>();
-    incidents.filter(isIncidentActive).forEach((inc) => {
-      set.add(inc.team);
-    });
-    return set;
+    const assigned = new Set(incidents.filter(isIncidentActive).map((incident) => incident.team));
+    return new Set(TEAMS_DATA.filter((team) => assigned.has(team.name)).map((team) => team.name));
   }, [incidents]);
 
   // Filtered teams list

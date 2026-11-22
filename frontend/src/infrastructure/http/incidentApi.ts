@@ -94,3 +94,19 @@ export async function fetchIncidentsForTeam(team: TeamCandidate, signal?: AbortS
   ensureAuthorized(res);
   return res.json();
 }
+
+export async function undoResolveIncident(id: string, updated: string): Promise<Incident> {
+  const response = await fetch(`/api/incidents/${encodeURIComponent(id)}/undo-resolve`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ updated_at: updated }),
+  });
+  ensureAuthorized(response);
+  return normalizeIncident(await response.json());
+}
+
+export async function closeIncident(id: string, updated: string): Promise<Incident> {
+  const response = await fetch(`/api/incidents/${encodeURIComponent(id)}/close`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ updated_at: updated }),
+  });
+  ensureAuthorized(response);
+  return normalizeIncident(await response.json());
+}

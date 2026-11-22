@@ -16,7 +16,7 @@ export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) 
   const groups = getIncidentGroups(incident);
   const primary = getPrimaryGroup(incident);
   const badgeClass = groups.length ? getGroupBadgeClass(primary) : resolved ? "resolved" : getGroupBadgeClass(primary);
-  const statusLabel = !groups.length && resolved ? "Решён" : primary;
+  const statusLabel = !groups.length && resolved ? (incident.status === "Closed" ? "Закрыт" : "Решён") : primary;
   const teamLabel = [incident.assignee, incident.team].filter(Boolean).join(" · ") || "Не назначен";
 
   return (
@@ -74,6 +74,10 @@ export function IncidentCard({ incident, seconds, onClick }: IncidentCardProps) 
         </div>
       </div>
 
+      {(incident.resolved_by || incident.closed_by) && <div className="card-authors">
+        {incident.resolved_by && <small title={`Решил: ${incident.resolved_by}`}>Решил: {incident.resolved_by}</small>}
+        {incident.closed_by && <small title={`Закрыл: ${incident.closed_by}`}>Закрыл: {incident.closed_by}</small>}
+      </div>}
       <div className="card-owner" title={teamLabel}>
         <Icon name="users" size={13} />
         <span>{teamLabel}</span>

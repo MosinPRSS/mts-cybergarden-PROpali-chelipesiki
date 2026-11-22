@@ -1,5 +1,9 @@
 export interface Incident {
   id: string;
+  resolved_by?: string | null;
+  closed_by?: string | null;
+  closed_at?: string | null;
+  undo_resolve_until?: string | null;
   priority: string;
   service: string;
   area: string;

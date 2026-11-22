@@ -57,7 +57,8 @@ def make_request(with_context=True):
 def make_result(with_context=True):
     return {
         "incident_id": "INC-TEST-1",
-        "summary": "Нарушена авторизация; инцидент в работе.",
+        "summary": "Нарушена авторизация.",
+        "next_step": "Уточните масштаб сбоя у ответственного.",
         "related_incidents_used": ([{
             "incident_id": "INC-TEST-0", "contribution": "Ранее были похожие симптомы.",
         }] if with_context else []),
@@ -78,17 +79,21 @@ def http_response(status=200, content=None, finish_reason="stop"):
 
 
 class ContractTests(unittest.TestCase):
-    def test_snapshot_preserves_ids_and_null_false_distinction(self):
+    def test_model_does_not_receive_dates_or_active_solution(self):
         request = make_request()
+        request.incident.deadline.FromJsonString("2026-11-21T13:00:00Z")
+        request.incident.solution = "Расследование ведётся"
         validate_request(request)
         data = json.loads(build_messages(request)[1]["content"])
-        self.assertEqual(data["incident"]["sys_id"], "179413934903718013")
-        self.assertNotIn("deadline", data["incident"])
-        self.assertNotIn("is_need_up", data["incident"])
-        self.assertIs(data["incident"]["is_double"], False)
-        request.incident.is_need_up = False
-        data = json.loads(build_messages(request)[1]["content"])
-        self.assertIs(data["incident"]["is_need_up"], False)
+        self.assertEqual(data["incident"]["id"], request.incident.id)
+        for name in ("as_of", "deadline", "submit_date", "updated_at", "solution"):
+            self.assertNotIn(name, data["incident"])
+            self.assertNotIn(name, data)
+
+    def test_verbose_problem_or_step_is_rejected(self):
+        for change in ({"summary": "x" * 181}, {"next_step": "x" * 181}, {"next_step": " "}):
+            with self.assertRaises(ValueError):
+                build_response(make_request(), {**make_result(), **change})
 
     def test_valid_response_uses_server_metadata(self):
         request = make_request()

@@ -37,7 +37,7 @@ export function useFeedback() {
   }, [sound]);
   const connectionChanged = useCallback((status: ConnectionStatus) => setLiveStatus({ ...connectionMessages[status] }), []);
   const actionFailed = useCallback(({ action, id }: IncidentActionFailure) => {
-    setAlertBanner({ type: "critical", text: action === "resolve"
+    setAlertBanner({ type: "critical", text: action === "close" ? `Не удалось закрыть ${id}. Данные могли измениться; повторите после обновления.` : action === "undo" ? `Не удалось отменить завершение ${id}: инцидент изменён или уже закрыт. Обновите данные.` : action === "resolve"
       ? `Не удалось отметить ${id} решённым. Повторите попытку.`
       : `Не удалось назначить команду на ${id}. Изменение не подтверждено сервером.` });
   }, []);

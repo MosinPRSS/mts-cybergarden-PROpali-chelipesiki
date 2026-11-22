@@ -67,9 +67,9 @@ class IncidentActionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, 200)
             snapshot = json.loads((await anext(subscriber.events())).raw_data)
             self.assertEqual([item["id"] for item in snapshot], ["target", "other"])
-            self.assertEqual(snapshot[0]["stateEnum"], "Resolved")
+            self.assertEqual(snapshot[0]["stateEnum"], "Research")
             self.assertEqual(snapshot[0]["completionDate"], resolved["completionDate"])
-            self.assertEqual(snapshot[0]["groups"], [])
+            self.assertEqual(snapshot[0]["groups"], ["Исследование ситуации"])
             self.assertTrue(subscriber.queue.empty())
 
             status, current = await self.request("/api/incidents")

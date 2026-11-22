@@ -78,7 +78,14 @@ export function DashboardPage({ user, onLogout, signingOut }: {
     </main>
     {selected && <Drawer key={selected.id} incident={selected} seconds={slaFor(selected)} onClose={closeDrawer}
       onSelectRelated={selectById} saving={actions.savingIds.includes(selected.id)}
-      onResolve={actions.resolve} onAssignTeam={(id, team, selectedWithAi) => actions.assign(id, team, undefined, selectedWithAi)} />}
+      onResolve={actions.resolve} onUndoResolve={actions.undoResolve} onCloseIncident={actions.close} onAssignTeam={(id, team, selectedWithAi) => actions.assign(id, team, undefined, selectedWithAi)} />}
+    {!!actions.undoable.length && <div className="undo-resolve-toasts" aria-live="polite">
+      {actions.undoable.map((incident) => <div className="undo-resolve-toast" key={incident.id}>
+        <span>Инцидент {incident.id} решён · передан в исследование</span>
+        <button className="secondary-button" disabled={actions.savingIds.includes(incident.id)}
+          onClick={() => actions.undoResolve(incident)}>Отменить</button>
+      </div>)}
+    </div>}
     <AlertBanner banner={feedback.alertBanner} onClose={feedback.dismissAlert} />
     <LiveToast status={feedback.liveStatus} />
   </div>;
