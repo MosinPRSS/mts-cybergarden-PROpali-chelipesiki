@@ -422,3 +422,90 @@ test("teams page shows an external ITSM roster and supports empty search recover
   await act(async () => view.container.querySelector('.teams-empty-state button').click());
   assert.equal(view.container.querySelectorAll('.team-card').length, TEAMS_DATA.length);
 });
+
+test("team selection survives a burst of SSE arrivals during AI analysis and appends arrivals after the snapshot", async (t) => {
+  const { AssignIncidentModal } = await load("presentation/components/teams/AssignIncidentModal.tsx");
+  const { TEAMS_DATA } = await load("data/teams.ts");
+  const team = TEAMS_DATA.find((item) => item.id === "infra");
+  const version = new Date(now).toISOString();
+  const original = ["first", "second"].map((id) => ({ ...row(id, 10), updated: version }));
+  const pending = deferred(), requests = [], assigned = [];
+  const recommendation = (id, percent = 86) => ({ incident_id: id, incident_updated_at: version,
+    team: { id: team.id, name: team.name }, match_percent: percent, reason: `Обоснование ${id}` });
+  const services = defaults({ analysis: { recommendForTeam: async (_team, signal, ids) => {
+    requests.push({ signal, ids }); return requests.length === 1 ? pending.promise : ids.map((id) => recommendation(id));
+  } } });
+  const props = { team, incidents: original, onClose() {}, onAssign: (...args) => assigned.push(args) };
+  const view = await render(t, createElement(AssignIncidentModal, props), services);
+  const ids = () => [...view.container.querySelectorAll('.inc-id-tag')].map((node) => node.textContent);
+  const list = view.container.querySelector('.modal-incidents-list');
+  list.scrollTop = 240;
+  await act(async () => view.container.querySelector('.modal-team-summary .secondary-button').click());
+  assert.deepEqual(requests[0].ids, ["first", "second"]);
+  const arrivals = [];
+  for (let index = 0; index < 50; index++) {
+    arrivals.unshift({ ...row(`arrival-${index}`, 10), updated: version, groups: ["На координаторах"] });
+    await view.update(createElement(AssignIncidentModal, { ...props, incidents: [...arrivals, ...original.slice().reverse()] }));
+  }
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].signal.aborted, false);
+  assert.equal(view.container.querySelector('.modal-incidents-list'), list);
+  assert.equal(list.scrollTop, 240);
+  assert.deepEqual(ids().slice(0, 4), ["first", "second", "arrival-0", "arrival-1"]);
+  assert.match(view.container.querySelector('.selection-new-arrivals').textContent, /50/);
+  await act(async () => pending.resolve([recommendation("second", 96), recommendation("first", 86)]));
+  assert.deepEqual(ids().slice(0, 4), ["second", "first", "arrival-0", "arrival-1"]);
+  assert.equal(view.container.querySelectorAll('.ai-suggestion-box').length, 2);
+  await view.update(createElement(AssignIncidentModal, { ...props, incidents: [...arrivals.slice().reverse(), ...original] }));
+  assert.deepEqual(ids().slice(0, 4), ["second", "first", "arrival-0", "arrival-1"]);
+  await act(async () => view.container.querySelector('.filter-pill-btn').click());
+  assert.deepEqual(ids(), ["second", "first"]);
+  const input = view.container.querySelector('.modal-search input');
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'second');
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  });
+  const latest = { ...row("latest", 10), updated: version };
+  await view.update(createElement(AssignIncidentModal, { ...props, incidents: [latest, ...arrivals, ...original] }));
+  assert.equal(input.value, "second");
+  assert.ok(view.container.querySelector('.filter-pill-btn').classList.contains('active'));
+  assert.deepEqual(ids(), ["second"]);
+  assert.equal(requests.length, 1);
+  await act(async () => view.container.querySelector('.assign-confirm-btn').click());
+  assert.deepEqual(assigned, [["second", team.name, true]]);
+});
+
+test("manual AI refresh includes appended incidents, preserves other results when one incident changes, and cancels on close", async (t) => {
+  const { AssignIncidentModal } = await load("presentation/components/teams/AssignIncidentModal.tsx");
+  const { TEAMS_DATA } = await load("data/teams.ts");
+  const team = TEAMS_DATA.find((item) => item.id === "infra");
+  const first = { ...row("first", 10), updated: new Date(now).toISOString() };
+  const second = { ...row("second", 10), updated: first.updated };
+  const third = { ...row("third", 10), updated: first.updated };
+  const requests = [];
+  const last = deferred();
+  const services = defaults({ analysis: { recommendForTeam: async (_team, signal, ids) => {
+    requests.push({ signal, ids });
+    if (requests.length === 3) return last.promise;
+    return ids.map((id) => ({ incident_id: id, incident_updated_at: first.updated, team: { id: team.id, name: team.name },
+      match_percent: 86, reason: `Подходит ${id}` }));
+  } } });
+  const props = { team, incidents: [first, second], onClose() {}, onAssign() {} };
+  const view = await render(t, createElement(AssignIncidentModal, props), services);
+  const analyze = () => act(async () => view.container.querySelector('.modal-team-summary .secondary-button').click());
+  await analyze();
+  await view.update(createElement(AssignIncidentModal, { ...props, incidents: [third, second, first] }));
+  assert.equal(view.container.querySelectorAll('.ai-suggestion-box').length, 2);
+  await analyze();
+  assert.deepEqual(requests[1].ids, ["first", "second", "third"]);
+  assert.equal(view.container.querySelector('.selection-new-arrivals'), null);
+  assert.equal(view.container.querySelectorAll('.ai-suggestion-box').length, 3);
+  await view.update(createElement(AssignIncidentModal, { ...props,
+    incidents: [{ ...first, updated: new Date(now + 1000).toISOString() }, second, third] }));
+  assert.equal(view.container.querySelectorAll('.ai-suggestion-box').length, 2);
+  assert.equal(requests.length, 2);
+  await analyze();
+  await view.unmount();
+  assert.equal(requests[2].signal.aborted, true);
+  await act(async () => last.resolve([]));
+});

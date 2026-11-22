@@ -220,3 +220,13 @@ class ReverseRoutingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result[0].match_percent, 86)
         finally:
             await server.stop(0)
+
+class TeamIncidentSnapshotRequestTests(unittest.TestCase):
+    def test_snapshot_ids_are_optional_unique_and_bounded(self):
+        from schemas.teams import TeamIncidentRecommendationRequest
+        self.assertIsNone(TeamIncidentRecommendationRequest(**CANDIDATES[0]).incident_ids)
+        self.assertEqual(TeamIncidentRecommendationRequest(**CANDIDATES[0], incident_ids=[]).incident_ids, [])
+        self.assertEqual(TeamIncidentRecommendationRequest(**CANDIDATES[0], incident_ids=["INC-A", "INC-B"]).incident_ids, ["INC-A", "INC-B"])
+        for ids in (["INC-A", "INC-A"], [""], ["x" * 129], [f"INC-{index}" for index in range(10001)]):
+            with self.subTest(count=len(ids)), self.assertRaises(ValidationError):
+                TeamIncidentRecommendationRequest(**CANDIDATES[0], incident_ids=ids)

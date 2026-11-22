@@ -13,7 +13,7 @@ from core.db import get_db
 from models import Incident
 from ai_proto import generate_pb2 as pb
 from schemas.summary import DashboardSummary, IncidentSummary, SummaryMode, SummaryWindow
-from schemas.teams import TeamCandidate, TeamRecommendation, TeamRecommendationRequest
+from schemas.teams import TeamIncidentRecommendationRequest, TeamRecommendation, TeamRecommendationRequest
 from domain.incidents import IncidentState
 from services.dashboard_summary import dashboard_summary_service, priority_query, incident_snapshot
 from services.incident_summary import incident_summary_service, related_context
@@ -23,19 +23,22 @@ router = APIRouter(prefix="/api/incidents", tags=["incidents"], dependencies=[De
 
 
 @router.post("/recommend-for-team", response_model=list[TeamRecommendation])
-async def recommend_for_team(team: TeamCandidate, db: Annotated[AsyncSession, Depends(get_db)]):
+async def recommend_for_team(team: TeamIncidentRecommendationRequest, db: Annotated[AsyncSession, Depends(get_db)]):
     if team.id == "coordinators":
         raise HTTPException(422, "Выберите команду исполнителей.")
-    incidents = list((await db.scalars(select(Incident).where(
+    query = select(Incident).where(
         Incident.state_enum.in_([IncidentState.ASSIGNED, IncidentState.WORK_IN_PROGRESS, IncidentState.RESEARCH]),
         Incident.assigned_group_name != team.name, Incident.team_selected_with_ai.is_(False),
-    ).order_by(Incident.id))).all())
+    )
+    if team.incident_ids is not None:
+        query = query.where(Incident.id.in_(team.incident_ids))
+    incidents = list((await db.scalars(query.order_by(Incident.id))).all())
     snapshots = [incident_snapshot(item) for item in incidents]
     versions = {item.id: item.updated_at for item in incidents}
     db.expunge_all()
     await db.rollback()
     now = datetime.now(timezone.utc)
-    requests = [pb.RecommendTeamIncidentsRequest(team=pb.TeamCandidate(**team.model_dump()),
+    requests = [pb.RecommendTeamIncidentsRequest(team=pb.TeamCandidate(**team.model_dump(exclude={"incident_ids"})),
         incidents=snapshots[i:i + 5]) for i in range(0, len(snapshots), 5)]
     for request in requests:
         request.as_of.FromDatetime(now)

@@ -58,7 +58,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/TeamCandidate"
+                "$ref": "#/components/schemas/TeamIncidentRecommendationRequest"
               }
             }
           },
@@ -2061,6 +2061,84 @@
           "responsibility"
         ],
         "title": "TeamFitCriteria"
+      },
+      "TeamIncidentRecommendationRequest": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "domain": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Domain"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Description"
+          },
+          "services": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Services"
+          },
+          "skills": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Skills"
+          },
+          "incident_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "maxLength": 128,
+                  "minLength": 1
+                },
+                "type": "array",
+                "maxItems": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "domain",
+          "description",
+          "services",
+          "skills"
+        ],
+        "title": "TeamIncidentRecommendationRequest"
       },
       "TeamRecommendation": {
         "properties": {

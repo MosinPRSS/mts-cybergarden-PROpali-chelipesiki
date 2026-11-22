@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { Incident } from "../../../domain/incidents/types.ts";
 import type { Team } from "../../../domain/teams/types.ts";
 import { Icon } from "../common/Icon";
-import { useServices } from "../../../application/servicesContext.ts";
-import type { TeamRecommendation } from "../../../domain/teams/types.ts";
+import { useTeamIncidentSelection } from "../../../application/analysis/useTeamIncidentSelection.ts";
 import { formatSla, getGroupBadgeClass } from "../../formatters.ts";
-import { getIncidentGroups, getPrimaryGroup, isIncidentActive } from "../../../domain/incidents/groups.ts";
+import { getPrimaryGroup } from "../../../domain/incidents/groups.ts";
 
 interface AssignIncidentModalProps {
   team: Team;
@@ -16,10 +15,9 @@ interface AssignIncidentModalProps {
 }
 
 export function AssignIncidentModal(props: AssignIncidentModalProps) {
-  const { team, incidents } = props;
-  const version = JSON.stringify([team.id, team.name, team.domain, team.description, team.services, team.tags,
-    incidents.map((item) => [item.id, item.updated, item.team_selected_with_ai]).sort()]);
-  return <IncidentSelection key={version} {...props} />;
+  const { team } = props;
+  const profileKey = JSON.stringify([team.id, team.name, team.domain, team.description, team.services, team.tags]);
+  return <IncidentSelection key={profileKey} {...props} />;
 }
 
 function IncidentSelection({
@@ -32,38 +30,15 @@ function IncidentSelection({
   const [search, setSearch] = useState("");
   const [onlyRecommended, setOnlyRecommended] = useState(false);
 
-  const { analysis } = useServices();
-  const [results, setResults] = useState<TeamRecommendation[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const controller = useRef<AbortController | null>(null);
-  useEffect(() => () => controller.current?.abort(), []);
-  async function recommend() {
-    controller.current?.abort();
-    const request = new AbortController(); controller.current = request;
-    setLoading(true); setError("");
-    try {
-      const data = await analysis.recommendForTeam({ id: team.id, name: team.name, domain: team.domain,
-        description: team.description, services: team.services, skills: team.tags }, request.signal);
-      if (!request.signal.aborted) setResults(data);
-    } catch (failure) {
-      if (!request.signal.aborted) setError(failure instanceof Error ? failure.message : "ИИ-подбор недоступен.");
-    } finally { if (!request.signal.aborted) setLoading(false); }
-  }
-
-  // Filter only active incidents
-  const activeIncidents = useMemo(
-    () => incidents.filter((item) => isIncidentActive(item) || item.status === "Research"),
-    [incidents]
-  );
+  const { orderedIncidents, matches, results, loading, error, recommend, newCount, snapshotIds } = useTeamIncidentSelection(team, incidents);
 
   // Match all active incidents against this team
   const scoredIncidents = useMemo(() => {
-    return activeIncidents.map((incident) => {
-      const match = results?.find((item) => item.incident_id === incident.id &&
-        item.team?.id === team.id && Date.parse(item.incident_updated_at) === Date.parse(incident.updated));
+    return orderedIncidents.map((incident) => {
+      const candidate = matches.get(incident.id);
+      const match = candidate?.team?.id === team.id &&
+        Date.parse(candidate.incident_updated_at) === Date.parse(incident.updated) ? candidate : undefined;
       const isAlreadyOnThisTeam = incident.team === team.name;
-      const isSittingOnCoordinators = getIncidentGroups(incident).includes("На координаторах");
       return {
         incident,
         score: match?.match_percent ?? 0,
@@ -71,15 +46,11 @@ function IncidentSelection({
         criteria: match?.criteria,
         recommended: Boolean(match?.team) && !incident.team_selected_with_ai,
         isAlreadyOnThisTeam,
-        isSittingOnCoordinators,
       };
     });
-  }, [activeIncidents, team, results]);
+  }, [orderedIncidents, team, matches]);
 
-  // Filter and sort:
-  // 1. Not already on this team
-  // 2. Matching search query
-  // 3. Recommended to the top
+  // Search and filters preserve the stable queue and completed AI ranking.
   const filteredList = useMemo(() => {
     return scoredIncidents
       .filter((item) => {
@@ -94,15 +65,6 @@ function IncidentSelection({
           inc.summary.toLowerCase().includes(q) ||
           (inc.area && inc.area.toLowerCase().includes(q))
         );
-      })
-      .sort((a, b) => {
-        // High score first
-        if (b.score !== a.score) return b.score - a.score;
-        // Then coordinators first
-        if (b.isSittingOnCoordinators !== a.isSittingOnCoordinators) {
-          return b.isSittingOnCoordinators ? 1 : -1;
-        }
-        return 0;
       });
   }, [scoredIncidents, search, onlyRecommended]);
 
@@ -170,7 +132,10 @@ function IncidentSelection({
             {loading ? "Подбираем инциденты…" : results ? "Обновить ИИ-подбор" : "Подобрать с ИИ"}
           </button>
           {error && <p role="alert">{error}</p>}
-          {results && <small>ИИ-подбор завершён. Поиск и фильтр работают без новых запросов.</small>}
+          {results && <small>ИИ-подбор завершён для зафиксированного набора инцидентов.</small>}
+          {newCount > 0 && <small className="selection-new-arrivals" role="status">
+            Новых инцидентов: {newCount}. Добавлены в конец списка. Включить их в анализ можно кнопкой «{results ? "Обновить ИИ-подбор" : "Подобрать с ИИ"}».
+          </small>}
         </div>
         <div className="modal-incidents-list">
           {filteredList.length === 0 ? (
@@ -193,6 +158,7 @@ function IncidentSelection({
                     <div className="incident-tags-row">
                       <span className={`priority-badge ${badgeClass}`}>{primaryGroup}</span>
                       <span className="inc-id-tag">{incident.id}</span>
+                      {!snapshotIds.has(incident.id) && <span className="selection-new-label">Новый · без анализа</span>}
                       {incident.sla !== null && (
                         <span className={`sla-mini-tag ${incident.sla < 900 ? "sla-danger" : ""}`}>
                           <Icon name="clock" size={12} />

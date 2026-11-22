@@ -796,3 +796,40 @@ class PostgreSQLTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(await db.get(UserSession, "initial-session"))
             self.assertIsNone(await db.get(UserSession, "other-session"))
             self.assertEqual((await db.get(User, other.id)).role, UserRole.ENGINEER)
+
+    async def test_team_incident_snapshot_excludes_new_arrivals_during_analysis(self):
+        from unittest.mock import patch
+        from ai_proto import generate_pb2 as pb
+        from tests.test_team_recommendation import CANDIDATES, routing_response
+        from services.team_recommendation import validate_recommendation
+        await self.seed()
+        async with self.sessions() as db:
+            ids = list((await db.scalars(select(Incident.id).where(
+                Incident.state_enum.in_([IncidentState.ASSIGNED, IncidentState.WORK_IN_PROGRESS, IncidentState.RESEARCH]),
+                Incident.assigned_group_name != CANDIDATES[0]["name"], Incident.team_selected_with_ai.is_(False),
+            ).order_by(Incident.id).limit(2))).all())
+        self.assertEqual(len(ids), 2)
+        arrived = copy.deepcopy(self.records[0])
+        arrived["id"] = "INC-LIVE-ARRIVAL"
+        arrived["sysId"] = "99999111122223333"
+        seen = []
+        async def generate(request):
+            seen.extend(item.id for item in request.incidents)
+            async with self.sessions.begin() as db:
+                await import_incidents(db, [arrived])
+            return [validate_recommendation(child, routing_response(child)) for child in [
+                pb.RecommendIncidentTeamRequest(incident=item, teams=[request.team], as_of=request.as_of)
+                for item in request.incidents]]
+        with patch("routers.summary.team_incident_service.recommend", new=generate):
+            status, _, result = await self.auth_request("/api/incidents/recommend-for-team", method="POST",
+                data={**CANDIDATES[0], "incident_ids": ids})
+        self.assertEqual(status, 200)
+        self.assertEqual(set(seen), set(ids))
+        self.assertEqual({item["incident_id"] for item in result}, set(ids))
+        async with self.sessions() as db:
+            self.assertIsNotNone(await db.get(Incident, arrived["id"]))
+        with patch("routers.summary.team_incident_service.recommend") as provider:
+            status, _, result = await self.auth_request("/api/incidents/recommend-for-team", method="POST",
+                data={**CANDIDATES[0], "incident_ids": []})
+        self.assertEqual((status, result), (200, []))
+        provider.assert_not_called()

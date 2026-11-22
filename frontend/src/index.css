@@ -1340,7 +1340,7 @@ main {
 }
 .ai-analysis > p {
   color: var(--subtle);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.6;
   margin: 13px 0;
 }
@@ -3554,3 +3554,6 @@ button:disabled { opacity: .55; cursor: wait; }
 .team-member-status.on_call { color: #e89232; }
 .teams-empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 20px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; }
 .teams-empty-state p { margin: 0; color: var(--text); font-weight: 600; }
+
+.selection-new-arrivals { display: block; margin-top: 8px; color: var(--subtle); line-height: 1.5; }
+.selection-new-label { padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; color: var(--subtle); font-size: 10px; }

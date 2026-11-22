@@ -30,6 +30,16 @@ class TeamRecommendationRequest(BaseModel):
         return self
 
 
+class TeamIncidentRecommendationRequest(TeamCandidate):
+    incident_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] | None = Field(default=None, max_length=10000)
+
+    @model_validator(mode="after")
+    def unique_incidents(self):
+        if self.incident_ids is not None and len(set(self.incident_ids)) != len(self.incident_ids):
+            raise ValueError("Expected unique incident IDs")
+        return self
+
+
 class RecommendedTeam(BaseModel):
     id: str
     name: str

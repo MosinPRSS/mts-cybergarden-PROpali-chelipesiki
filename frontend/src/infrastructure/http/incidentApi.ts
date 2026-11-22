@@ -85,9 +85,10 @@ export async function assignIncident(
   return normalizeIncident(data);
 }
 
-export async function fetchIncidentsForTeam(team: TeamCandidate, signal?: AbortSignal): Promise<TeamRecommendation[]> {
+export async function fetchIncidentsForTeam(team: TeamCandidate, signal?: AbortSignal, incidentIds?: string[]): Promise<TeamRecommendation[]> {
   const res = await fetch("/api/incidents/recommend-for-team", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(team), signal, cache: "no-store",
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...team, ...(incidentIds === undefined ? {} : { incident_ids: incidentIds }) }), signal, cache: "no-store",
   });
   if (res.status === 409) throw new Error("Данные изменились. Повторите подбор.");
   if (res.status === 503) throw new Error("ИИ-подбор недоступен. Попробуйте ещё раз.");

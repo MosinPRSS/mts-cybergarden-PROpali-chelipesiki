@@ -128,3 +128,18 @@ test("ITSM mock rosters contain external participants and consistent membership 
     }
   }
 });
+
+test("batch team analysis sends only the selected snapshot IDs and keeps the compatibility payload", async (t) => {
+  const { fetchIncidentsForTeam } = await import("../src/infrastructure/http/incidentApi.ts");
+  const profile = { id: "infra", name: "Инфраструктура", domain: "IT", description: "Поддержка", services: ["Cloud"], skills: ["Linux"] };
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    requests.push(options); return new Response("[]", { status: 200 });
+  });
+  const controller = new AbortController();
+  await fetchIncidentsForTeam(profile, controller.signal, ["captured-1", "captured-2"]);
+  assert.deepEqual(JSON.parse(requests[0].body), { ...profile, incident_ids: ["captured-1", "captured-2"] });
+  assert.equal(requests[0].signal, controller.signal);
+  await fetchIncidentsForTeam(profile);
+  assert.deepEqual(JSON.parse(requests[1].body), profile);
+});

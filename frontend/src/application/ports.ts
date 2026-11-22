@@ -33,7 +33,7 @@ export interface IncidentGateway {
 export interface AnalysisGateway {
   dashboard(signal?: AbortSignal, mode?: SummaryMode, windowMinutes?: SummaryWindow): Promise<DashboardSummary>;
   incident(id: string, signal?: AbortSignal): Promise<IncidentSummary>;
-  recommendForTeam(team: TeamCandidate, signal?: AbortSignal): Promise<TeamRecommendation[]>;
+  recommendForTeam(team: TeamCandidate, signal?: AbortSignal, incidentIds?: string[]): Promise<TeamRecommendation[]>;
   recommendTeam(id: string, teams: TeamCandidate[], signal?: AbortSignal): Promise<TeamRecommendation>;
 }
 
